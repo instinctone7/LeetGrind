@@ -36,6 +36,8 @@ test('register, sign in, update a profile, refresh, and sign out', async ({ page
 
   await page.getByLabel('Password').fill(password)
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Verify your LeetCode profile' })).toBeVisible()
+  await expect(page.getByText(/Copy your verification code lg-/)).toBeVisible()
   await expect(page.getByRole('banner').getByRole('button', { name: 'Profile', exact: true })).toHaveCount(0)
   const accountMenu = page.getByRole('button', { name: 'Account menu' })
   await accountMenu.focus()

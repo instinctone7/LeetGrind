@@ -9,6 +9,8 @@ const rewardNames: Record<string, string> = {
   FEATURED: 'Problem of the Day bonus',
   DAILY_QUEST: 'Daily quest bonus',
   WEEKLY_QUEST: 'Weekly quest bonus',
+  DUEL_WIN: 'Duel victory',
+  DUEL_LOSS: 'Duel loss',
 }
 
 function errorText(error: unknown) {
@@ -20,8 +22,8 @@ function date(value: string | null) {
   return value ? dateFormat.format(new Date(value)) + ' UTC' : '—'
 }
 
-export function Practice({ accountId }: { accountId: string }) {
-  const { snapshot, error: previewError, refresh } = usePublicLeetCode()
+export function Practice({ accountId, onProfile }: { accountId: string; onProfile: () => void }) {
+  const { snapshot, error: previewError, refresh, link } = usePublicLeetCode()
   const [refreshingPreview, setRefreshingPreview] = useState(false)
   const [progress, setProgress] = useState<Progress | null>(null)
   const [entries, setEntries] = useState<XpEntry[]>([])
@@ -127,6 +129,10 @@ export function Practice({ accountId }: { accountId: string }) {
           <h2 id="xp-heading">XP history</h2>
           <p>{view ? view.totalXp : '—'} XP · {progress.solvedCount} credited solves</p>
           <small>Practice XP includes daily login rewards and verified solve rewards.</small>
+          {link?.state === 'PENDING' && link.ownershipCode && <div className="practice-actions">
+            <p className="muted">Verify your saved LeetCode profile to earn solve XP.</p>
+            <button type="button" className="text-button" onClick={onProfile}>Open profile verification</button>
+          </div>}
           {entries.length ? (
             <ul className="xp-list">
               {entries.map(entry => (
@@ -135,7 +141,7 @@ export function Practice({ accountId }: { accountId: string }) {
                     {entry.provider === 'FIXTURE' ? 'Demo · ' : ''}
                     {entry.reason === 'BASE_SOLVE' && entry.difficulty ? entry.difficulty.toLowerCase() + ' · ' : ''}{date(entry.effectiveAt)}
                   </small></div>
-                  <span>+{entry.amount} XP</span>
+                  <span>{entry.amount >= 0 ? '+' : ''}{entry.amount} XP</span>
                 </li>
               ))}
             </ul>

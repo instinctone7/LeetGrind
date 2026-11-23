@@ -115,6 +115,7 @@ export type LinkStatus = {
   demoAvailable: boolean
   previewEnabled: boolean
   syncAvailable: boolean
+  ownershipCode: string | null
   providerPaused: boolean
   syncState: 'QUEUED' | 'RUNNING' | 'RETRY' | 'PAUSED' | 'IDLE' | null
   failureCode: string | null
@@ -152,7 +153,13 @@ export type LeetCodePreview = {
   ranking: number | null
   problemsSolved: { all: number; easy: number; medium: number; hard: number }
   heatmap: { streak: number; totalActiveDays: number; activityDays: { date: string; submissions: number }[] }
-  recentSubmissions: { title: string; titleSlug: string; timestamp: number; lang: string }[]
+  recentSubmissions: {
+    title: string
+    titleSlug: string
+    timestamp: number
+    lang: string | null
+    difficulty?: 'EASY' | 'MEDIUM' | 'HARD' | null
+  }[]
 }
 
 export const practiceApi = {
@@ -170,6 +177,8 @@ export const practiceApi = {
     protectedRequest<void>('/me/leetcode-link', { method: 'DELETE' }, accountId),
   sync: (accountId: string) =>
     protectedRequest<LinkStatus>('/me/leetcode-link/sync', { method: 'POST' }, accountId),
+  verify: (accountId: string) =>
+    protectedRequest<LinkStatus>('/me/leetcode-link/verify', { method: 'POST' }, accountId),
   progress: (accountId: string) => protectedRequest<Progress>('/me/progress', {}, accountId),
   checkIn: (accountId: string) =>
     protectedRequest<{ nextCheckInAt: string }>('/me/check-in', { method: 'POST' }, accountId),
@@ -249,24 +258,20 @@ function beforeParam(before?: string) {
 export type ChallengeRule = 'PROBLEM' | 'COUNT' | 'DIFFICULTY'
 export type ChallengeKind = 'GROUP' | 'DUEL'
 export type Difficulty = NonNullable<XpEntry['difficulty']>
-export type ChallengeDraft = {
-  title: string; kind: ChallengeKind; rule: ChallengeRule; mode: StandingsMode
-  inviteeId?: string; problemSlug?: string; difficulty?: Difficulty; target?: number; startsAt?: string; endsAt: string
-}
+export type DuelDraft = { inviteeId: string; problemUrl: string; durationMinutes: number; stakeXp: number }
+export type DuelSummary = { availableXp: number; wins: number; losses: number; netXp: number }
 export type Challenge = {
   id: string; title: string; kind: ChallengeKind; rule: ChallengeRule; mode: StandingsMode
   problemSlug: string | null; difficulty: Difficulty | null; target: number
   startsAt: string; endsAt: string; cutoffAt: string; ruleVersion: number; enrolled: number
   status: 'SCHEDULED' | 'AWAITING_OPPONENT' | 'ACTIVE' | 'GRACE' | 'FINALIZED'
   finalizedAt: string | null; outcome: 'WIN' | 'TIE' | 'NO_SCORE' | 'CANCELLED' | null
+  durationMinutes: number | null; stakeXp: number | null; problemUrl: string | null
+  xpDelta: number | null; opponent: string | null
 }
 export type ChallengeView = {
   challenge: Challenge; canEnroll: boolean
-  participants: { id: string; handle: string; displayName: string; enrolledAt: string | null; score: number; winner: boolean }[]
-}
-export type FeedItem = {
-  kind: 'SOLVE' | 'CHALLENGE_CREATED' | 'CHALLENGE_RESULT'; at: string; label: string
-  displayName: string | null; handle: string | null; xp: number | null; challengeId: string | null
+  participants: { id: string; handle: string; displayName: string; enrolledAt: string | null; score: number; winner: boolean; xpDelta: number | null }[]
 }
 export type Notification = {
   id: string; kind: 'INVITATION' | 'CHALLENGE_RESULT' | 'ACHIEVEMENT' | 'STANDINGS_CHANGE'
@@ -279,12 +284,12 @@ export const competitionApi = {
     groupRequest<Challenge[]>(account, '/groups/' + group + '/challenges?' + new URLSearchParams({ mode, ...(before && { before }) })),
   detail: (account: string, group: string, id: string) =>
     groupRequest<ChallengeView>(account, '/groups/' + group + '/challenges/' + id),
-  create: (account: string, group: string, draft: ChallengeDraft) =>
-    groupRequest<ChallengeView>(account, '/groups/' + group + '/challenges', 'POST', draft),
+  createDuel: (account: string, group: string, draft: DuelDraft) =>
+    groupRequest<ChallengeView>(account, '/groups/' + group + '/duels', 'POST', draft),
+  duelSummary: (account: string, group: string) =>
+    groupRequest<DuelSummary>(account, '/groups/' + group + '/duels/summary'),
   enroll: (account: string, group: string, id: string) =>
     groupRequest<ChallengeView>(account, '/groups/' + group + '/challenges/' + id + '/enrollment', 'POST'),
-  feed: (account: string, group: string, mode: StandingsMode) =>
-    groupRequest<FeedItem[]>(account, '/groups/' + group + '/activity?mode=' + mode),
   inbox: (account: string, before?: string) =>
     groupRequest<Notification[]>(account, '/me/notifications' + beforeParam(before)),
   read: (account: string, id: string) => groupRequest<void>(account, '/me/notifications/' + id + '/read', 'POST'),

@@ -4,21 +4,28 @@ import { ApiError, practiceApi } from './api'
 import type { LeetCodePreview, LinkStatus } from './api'
 
 type PublicProfile = {
+  link: LinkStatus | null
   snapshot: LeetCodePreview | null
   newAcceptances: LeetCodePreview['recentSubmissions']
   error: string
   refresh: (link?: LinkStatus) => Promise<void>
   publish: (snapshot: LeetCodePreview | null) => void
+  updateLink: (link: LinkStatus) => void
 }
 
 const PublicProfileContext = createContext<PublicProfile | null>(null)
 
 export function PublicLeetCodeProvider({ accountId, children }: { accountId: string; children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<LeetCodePreview | null>(null)
+  const [link, setLink] = useState<LinkStatus | null>(null)
   const [newAcceptances, setNewAcceptances] = useState<LeetCodePreview['recentSubmissions']>([])
   const latestSnapshot = useRef<LeetCodePreview | null>(null)
   const [error, setError] = useState('')
   const revision = useRef(0)
+  const updateLink = useCallback((next: LinkStatus) => {
+    revision.current += 1
+    setLink(next)
+  }, [])
 
   const publish = useCallback((next: LeetCodePreview | null) => {
     revision.current += 1
@@ -28,17 +35,23 @@ export function PublicLeetCodeProvider({ accountId, children }: { accountId: str
     setError('')
   }, [])
 
+  const lastReturnSync = useRef(0)
   const refresh = useCallback(async (chosen?: LinkStatus) => {
     const request = ++revision.current
     try {
       const link = chosen ?? await practiceApi.status(accountId)
       if (request !== revision.current) return
+      setLink(link)
       if (!link.previewEnabled || !link.handle || link.fixture || link.state === 'DISCONNECTED') {
         latestSnapshot.current = null
         setNewAcceptances([])
         setSnapshot(null)
         setError('')
         return
+      }
+      if (link.syncAvailable) {
+        lastReturnSync.current = Date.now()
+        await practiceApi.sync(accountId)
       }
       const next = await practiceApi.preview(accountId)
       if (request === revision.current) {
@@ -66,10 +79,26 @@ export function PublicLeetCodeProvider({ accountId, children }: { accountId: str
 
   useEffect(() => {
     void refresh()
-    return () => { revision.current += 1 }
-  }, [refresh])
+    async function syncOnReturn() {
+      if (document.visibilityState !== 'visible' || Date.now() - lastReturnSync.current < 30_000) return
+      lastReturnSync.current = Date.now()
+      try {
+        const status = await practiceApi.status(accountId)
+        if (!status.fixture && status.syncAvailable) await refresh(status)
+      } catch {
+        // The manual refresh can report a failed status request.
+      }
+    }
+    window.addEventListener('focus', syncOnReturn)
+    document.addEventListener('visibilitychange', syncOnReturn)
+    return () => {
+      revision.current += 1
+      window.removeEventListener('focus', syncOnReturn)
+      document.removeEventListener('visibilitychange', syncOnReturn)
+    }
+  }, [accountId, refresh])
 
-  return <PublicProfileContext.Provider value={{ snapshot, newAcceptances, error, refresh, publish }}>
+  return <PublicProfileContext.Provider value={{ link, snapshot, newAcceptances, error, refresh, publish, updateLink }}>
     {children}
   </PublicProfileContext.Provider>
 }

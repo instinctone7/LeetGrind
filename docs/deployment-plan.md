@@ -36,8 +36,9 @@ The `hosted` profile uses HTTPS cookies, disables fixture mode and the fixture s
 
 ### LeetCode launch scope
 
-- Deploy daily check-in XP, groups, the leaderboard UI, and other features supported by the current app. Verified solve and quest XP require an authorized submission source and account ownership proof, which are still pending. Keep fixtures and the sync scheduler disabled in production. Use the [local HTTPS staging runbook](phase4-release-runbook.md) to exercise solve, quest, and achievement rewards with fixtures. [Provider integration decision](evaluation/phase-00/evidence.md)
-- The `hosted` profile disables LeetCode previews by default. To enable them, set `LEETGRIND_PROFILE_PREVIEW_ENABLED=true` and point `LEETGRIND_PROFILE_SERVICE_URL` at an approved service that implements `GET /api/leetcode/user/{handle}`. Hosted startup requires the service URL when previews are enabled. [Profile preview implementation](../backend/src/main/java/com/leetgrind/integration/ProfilePreview.java)
+- The `hosted` profile disables LeetCode previews and public solve sync by default. To enable them, set `LEETGRIND_PROFILE_PREVIEW_ENABLED=true` and point `LEETGRIND_PROFILE_SERVICE_URL` at an approved service implementing `GET /api/leetcode/user/{handle}`. The response must preserve the current public `realName` for ownership verification and supply the newest accepted submission’s `titleSlug`, Unix timestamp in seconds, and `difficulty` as `EASY`, `MEDIUM`, or `HARD`. The app can resolve missing difficulty for problems in its own catalog. Hosted startup requires the service URL when previews are enabled. [Profile preview implementation](../backend/src/main/java/com/leetgrind/integration/ProfilePreview.java)
+- Users verify their saved handle with a code in their public LeetCode Real Name. Sync checks for that code each time and credits the newest eligible accepted solve, including one already visible at verification. Group rankings use the solve’s original timestamp and the group membership interval. The public feed has limited coverage. Keep the fixture scheduler disabled in production. [Provider integration constraints](evaluation/phase-00/evidence.md)
+- Timed duels validate problems against the local catalog or recorded problem metadata. To support other LeetCode problems in hosted mode, the approved profile service can expose `GET /api/leetcode/problem/{slug}` returning `titleSlug`, `title`, and `difficulty`.
 
 ## Release checks
 
@@ -67,4 +68,4 @@ Test sign-in from two networks behind Railway’s edge and review any unexpected
 
 ## Optional Vercel split
 
-If the project needs separate frontend hosting, use Vercel’s Vite build with root directory `frontend`, Node.js 24, build command `npm run build`, and output `dist`. Keep Spring Boot and MySQL on Railway. Add a Vercel rewrite from `/api/:path*` to `https://<railway-app-domain>/api/:path*` and set Spring’s browser origin to the stable Vercel HTTPS origin. Use a separate staging deployment with a stable frontend origin for auth testing. Verify the proxy preserves `Origin`, `X-LeetGrind-Client`, and refresh `Set-Cookie` behavior, and keeps authenticated API responses out of shared caches. [Vite on Vercel](https://vercel.com/docs/frameworks/frontend/vite) · [Vercel rewrites](https://vercel.com/docs/routing/rewrites)
+For separate frontend hosting, use the [hosting settings guide](hosting-settings.md) for Vercel, Railway, Railway MySQL, and optional Redis Insight.

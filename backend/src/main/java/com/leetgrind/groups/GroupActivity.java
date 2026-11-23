@@ -23,9 +23,9 @@ public class GroupActivity {
               AND (n.group_id IS NULL OR (g.closed_at IS NULL AND EXISTS (
                   SELECT 1 FROM memberships m WHERE m.group_id = n.group_id AND m.active_account_id = :actor
               )))
-              AND (c.id IS NULL OR c.kind = 'GROUP' OR EXISTS (
+              AND (c.id IS NULL OR (c.kind = 'DUEL' AND EXISTS (
                   SELECT 1 FROM challenge_participants cp WHERE cp.challenge_id = c.id AND cp.account_id = :actor
-              ))
+              )))
             """;
     private final JdbcClient jdbc;
     private final GroupService groups;
@@ -35,39 +35,6 @@ public class GroupActivity {
         this.jdbc = jdbc;
         this.groups = groups;
         this.clock = clock;
-    }
-
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    public List<FeedItem> feed(long group, long actor, String provider) {
-        groups.requireMember(group, actor, false);
-        return jdbc.sql("""
-                SELECT * FROM (
-                    SELECT s.id, 'SOLVE' AS kind, s.occurred_at AS event_at,
-                           p.title AS label, a.display_name AS display_name, a.handle AS handle,
-                           x.amount AS xp, CAST(NULL AS SIGNED) AS challenge_id
-                    FROM solves s
-                    JOIN accounts a ON a.id = s.account_id
-                    JOIN problems p ON p.id = s.problem_id
-                    JOIN xp_entries x ON x.solve_id = s.id AND x.reason = 'BASE_SOLVE' AND x.provider = :provider
-                    WHERE EXISTS (
-                        SELECT 1 FROM memberships m WHERE m.group_id = :group AND m.account_id = s.account_id
-                          AND s.occurred_at > m.joined_at AND (m.left_at IS NULL OR s.occurred_at < m.left_at)
-                    )
-                    UNION ALL
-                    SELECT c.id, 'CHALLENGE_CREATED', c.created_at, c.title, NULL, NULL, NULL, c.id
-                    FROM challenges c WHERE c.group_id = :group AND c.provider = :provider
-                      AND (c.kind = 'GROUP' OR EXISTS (
-                          SELECT 1 FROM challenge_participants cp WHERE cp.challenge_id = c.id AND cp.account_id = :actor))
-                    UNION ALL
-                    SELECT c.id, 'CHALLENGE_RESULT', c.finalized_at, c.title, NULL, NULL, NULL, c.id
-                    FROM challenges c WHERE c.group_id = :group AND c.provider = :provider AND c.finalized_at IS NOT NULL
-                      AND (c.kind = 'GROUP' OR EXISTS (
-                          SELECT 1 FROM challenge_participants cp WHERE cp.challenge_id = c.id AND cp.account_id = :actor))
-                ) activity ORDER BY event_at DESC, id DESC, kind LIMIT 40
-                """).param("group", group).param("actor", actor).param("provider", provider)
-                .query((row, index) -> new FeedItem(row.getString("kind"), GroupService.time(row, "event_at"),
-                        row.getString("label"), row.getString("display_name"), row.getString("handle"),
-                        row.getObject("xp", Integer.class), row.getString("challenge_id"))).list();
     }
 
     List<Notice> inbox(long actor, long before) {
@@ -131,7 +98,6 @@ public class GroupActivity {
     }
 
     private record Location(Long group) {}
-    record FeedItem(String kind, Instant at, String label, String displayName, String handle, Integer xp, String challengeId) {}
     record Notice(String id, String kind, String label, String groupId, String groupName, String challengeId,
                   String challengeTitle, Instant createdAt, Instant readAt) {}
 }

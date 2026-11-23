@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { FeedItem, GroupFeatured, GroupMember, RewardsProgress, Standings } from './api'
+import type { GroupFeatured, GroupMember, RewardsProgress, Standings } from './api'
 import { Avatar, Icon } from './Icons'
 
 type Standing = Standings['items'][number]
@@ -109,23 +109,5 @@ export function OvertakeCalculator({ leader, own }: RankProps) {
       </div>
       <p className="squad-projection" role="status">Projected total <strong>{xp(own.xp + Math.ceil(required / plans[selection].value) * plans[selection].value)}</strong></p>
     </> : <p className="muted">{own ? 'You’re currently at the top of the roster.' : 'Find your rank to calculate a path to first place.'}</p>}
-  </section>
-}
-
-export function GroupActivity({ feed, own, leader }: RankProps & { feed: FeedItem[] | null }) {
-  const [expanded, setExpanded] = useState(false)
-  const items = feed?.filter(item => item.kind === 'SOLVE' && (item.handle === own?.handle || item.handle === leader?.handle)) ?? []
-  return <section className="deck-panel squad-feed">
-    <div className="squad-card-heading"><h3><Icon name="event" /> Head-to-Head Feed</h3></div>
-    <p className="muted">{own && leader && own.id !== leader.id ? 'You and ' + leader.displayName : 'Recent solves'}</p>
-    {items.length ? <ul>{items.slice(0, expanded ? undefined : 3).map((item, index) => <li key={item.at + item.label + index}>
-      <Avatar name={item.displayName ?? ''} />
-      <span><strong>{item.handle === own?.handle ? 'You' : item.displayName}</strong> solved {item.label}
-        <small><time dateTime={item.at}>{utc.format(new Date(item.at))} UTC</time></small></span>
-      {item.xp !== null && <small className="squad-feed-xp">+{xp(item.xp)}</small>}
-    </li>)}</ul> : <p className="muted">{feed ? 'No recent solves to show.' : 'Activity is currently unavailable.'}</p>}
-    {items.length > 3 && <button type="button" className="text-button" onClick={() => setExpanded(value => !value)}>
-      {expanded ? 'Show fewer solves' : 'Show more solves'}
-    </button>}
   </section>
 }

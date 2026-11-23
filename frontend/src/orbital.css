@@ -727,7 +727,7 @@ button.activity-cell:focus-visible { outline-offset: 1px; }
 .squad-current .squad-row-rank, .squad-current td:last-child { color: var(--accent); }
 .squad-member { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .squad-member strong { display: inline-block; margin-inline-end: 6px; }
-.squad-member small, .squad-roster td small, .squad-feed small { display: block; }
+.squad-member small, .squad-roster td small { display: block; }
 .squad-roster-footer { padding: 12px 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }
 .squad-roster-footer p { margin: 0 0 6px; font-size: 12px; }
 .squad-rail .deck-panel { padding: 16px; }
@@ -748,11 +748,6 @@ button.activity-cell:focus-visible { outline-offset: 1px; }
 .squad-plans button[aria-pressed='true'] { border-color: #695787; }
 .squad-plans strong { color: var(--secondary); white-space: nowrap; }
 .squad-projection strong { color: var(--accent); }
-.squad-feed ul { display: grid; gap: 7px; padding: 0; margin: 0; list-style: none; }
-.squad-feed li { display: flex; align-items: start; gap: 8px; min-width: 0; padding: 8px; border-radius: 7px; background: var(--surface-inset); font-size: 12px; overflow-wrap: anywhere; }
-.squad-feed .orbital-avatar { flex: none; }
-.squad-feed-xp { margin-inline-start: auto; color: var(--secondary); white-space: nowrap; }
-.squad-feed button { margin-top: 8px; }
 .squad-competition { margin-top: 16px; }
 @media (max-width: 1100px) {
   .squad-workstation { grid-template-columns: 1fr; }

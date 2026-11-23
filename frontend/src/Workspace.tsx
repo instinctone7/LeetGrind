@@ -17,7 +17,7 @@ const navigation: { id: View; label: string; icon: string }[] = [
   { id: 'overview', label: 'Overview', icon: 'dashboard' },
   { id: 'groups', label: 'My groups', icon: 'group' },
   { id: 'leaderboard', label: 'Leaderboard', icon: 'bar_chart' },
-  { id: 'challenges', label: 'Challenges', icon: 'code' },
+  { id: 'challenges', label: 'Duels', icon: 'code' },
   { id: 'quests', label: 'Quests', icon: 'task_alt' },
   { id: 'achievements', label: 'Achievements', icon: 'military_tech' },
   { id: 'analytics', label: 'Analytics', icon: 'analytics' },
@@ -118,7 +118,6 @@ export function Workspace({ profile, profilePanel, settingsPanel, notice, clearN
   const [activeId, setActiveId] = useState<string | null>(null)
   const [groupId, setGroupId] = useState<string | null>(null)
   const [groupChallengeId, setGroupChallengeId] = useState<string | null>(null)
-  const [challenge, setChallenge] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [accessError, setAccessError] = useState(false)
   const [rankingScope, setRankingScope] = useState<'group' | 'individual'>('group')
@@ -148,7 +147,6 @@ export function Workspace({ profile, profilePanel, settingsPanel, notice, clearN
   function navigate(next: View) {
     setView(next)
     setAccessError(false)
-    setChallenge(null)
     clearNotice()
     menu.current?.close()
     searchDialog.current?.close()
@@ -209,7 +207,6 @@ export function Workspace({ profile, profilePanel, settingsPanel, notice, clearN
                 setActiveId(id)
                 if (view === 'groups') chooseGroup(id)
                 setAccessError(false)
-                setChallenge(null)
               }}>
                 {directory?.items.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}
               </select>
@@ -230,14 +227,13 @@ export function Workspace({ profile, profilePanel, settingsPanel, notice, clearN
 
       <main id="workspace-main" tabIndex={-1} className="orbital-main">
         {view === 'overview' ? <Dashboard key={`${profile.id}:${group?.id ?? ''}`} profile={profile} group={group}
-          onGroups={() => group ? showGroup(group.id) : showGroupList()} onLeaderboard={showLeaderboard}
+          onLeaderboard={showLeaderboard}
           onPractice={() => navigate('practice')} onProfile={() => navigate('profile')}
-          onQuests={() => navigate('quests')} onAnalytics={() => navigate('analytics')}
-          onChallenge={id => { navigate('challenges'); setChallenge(id) }} /> :
+          onQuests={() => navigate('quests')} onAnalytics={() => navigate('analytics')} /> :
           <div className={`workspace-page page-${view}${view === 'quests' || view === 'achievements' || view === 'leaderboard' ? '' : ' deck-panel'}`}>
             {view === 'groups' && <Groups accountId={profile.id} selectedId={groupId} challengeId={groupChallengeId}
               onSelect={chooseGroup} onPractice={() => navigate('practice')} />}
-            {view === 'practice' && <Practice accountId={profile.id} />}
+            {view === 'practice' && <Practice accountId={profile.id} onProfile={() => navigate('profile')} />}
             {view === 'analytics' && <Analytics accountId={profile.id} />}
             {view === 'notifications' && <Inbox accountId={profile.id} onOpen={(id, challengeId) => showGroup(id, challengeId)} />}
             {view === 'profile' && profilePanel}
@@ -255,10 +251,10 @@ export function Workspace({ profile, profilePanel, settingsPanel, notice, clearN
                 onAccessLost={() => setAccessError(true)} />
             </>}
             {view === 'challenges' && <>
-              <h1>Challenges</h1>
-              {group ? <ChallengePage key={`${group.id}:${challenge}`} profile={profile} group={group}
-                initialChallengeId={challenge} /> :
-                <GroupEmpty onGroups={showGroupList}>Join a group to start a challenge or invite a duel opponent.</GroupEmpty>}
+              <h1>Duels</h1>
+              {group ? <ChallengePage key={group.id} profile={profile} group={group}
+                initialChallengeId={null} /> :
+                <GroupEmpty onGroups={showGroupList}>Join a group to invite a duel opponent.</GroupEmpty>}
             </>}
             {(view === 'quests' || view === 'achievements') &&
               <Rewards key={view === 'quests' ? `quests:${group?.id ?? ''}` : view} accountId={profile.id} section={view} group={group}

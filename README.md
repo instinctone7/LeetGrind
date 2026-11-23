@@ -19,7 +19,9 @@ Open **http://127.0.0.1:8080/**. Use the exact origin so browser session request
 
 During signup, enter your display name and a LeetCode username or profile URL.
 
-Save a handle or `https://leetcode.com/u/handle/` in **Profile**, then select **Save LeetCode profile**. The prototype reads public GraphQL data on demand to show solve counts, activity, and recent accepted submissions. It requires no ownership verification. The unofficial endpoint can change, and preview activity stays outside XP and standings. Optionally set `LEETGRIND_PROFILE_SERVICE_URL` to use a compatible service implementing `GET /api/leetcode/user/{handle}`. In Docker, use an address reachable from the app container. [Phase 0 integration decision](docs/evaluation/phase-00/evidence.md)
+Save your LeetCode handle or profile URL in **Profile**. To earn solve XP, add the verification code shown in LeetGrind to your public LeetCode **Real Name** as a separate word, then select **Verify profile**. Keep the code there while sync is enabled. LeetGrind checks your newest accepted problem during verification, when you return to the workspace, and when you select **Sync now**. A first credited solve earns 10 XP for Easy, 25 XP for Medium, or 50 XP for Hard. Repeated refreshes and repeated accepts of the same problem cannot award solve XP again.
+
+The read-only preview shows public solve counts, activity, and recent accepted submissions. The unofficial GraphQL response can change and covers only recent public activity. Hosted deployments use a compatible approved profile service implementing `GET /api/leetcode/user/{handle}`. [Hosted profile service setup](docs/deployment-plan.md#leetcode-launch-scope)
 
 ### Try a private group with two accounts
 
@@ -34,9 +36,10 @@ Weekly standings use Monday-to-Monday UTC windows and credit the submission time
 In **Groups**, create a private group or choose **Public** to appear in the signed-in group directory. The directory shows only a group’s name and description. Joining opens the standings, roster, challenges, and activity. If a learner leaves or is removed, their eligible historical scores remain available to current members. Public group members can join again through the directory.
 
 - Switch among weekly, monthly, and all-time standings. Weeks start Monday at `00:00 UTC` and months start on the first at `00:00 UTC`. Group standings include verified solve XP, quest rewards, and daily check-in XP earned during eligible membership intervals.
-- Open **Challenges and duels**. Owners can publish challenges with open enrollment and optionally invite a current member. Any member can invite another current member to a one-on-one duel. Use a specific problem slug, a goal for distinct new solves, or a difficulty and solve count.
-- Eligible first solves count from the UTC start until the exclusive deadline and require active membership at solve time. A duel starts scoring once both players have joined it. The worker waits 24 hours after the deadline for late ingestion. Scores are capped at the published goal, positive ties share first place, and a duel without an accepted opponent is cancelled.
-- **Group activity** shows eligible solves and competition updates. **Notifications** shows competition invitations and results, your own achievement unlocks, and changes to your group XP. Opening a group notification requires current membership. [Phase 6 evaluation](docs/evaluation/phase-06/eval.md)
+- Open **Duels** from the workspace or your group.
+- In **Instant 1v1 Challenge**, choose a group member, paste a LeetCode problem URL, set a **10–120 minute** timer, and choose a **5, 25, 50, or 100 XP** stake. The server validates the problem and sends its canonical link. A duel starts when the opponent accepts. Use **Check my solve** to sync the assigned accepted submission before the deadline. A repeat acceptance of a previously credited problem can count for the duel without earning base solve XP again.
+- At the deadline, the earliest matching acceptance wins the stake. The loser forfeits the same amount. If both players time out, both forfeit their stakes. Identical submission timestamps and expired unaccepted invitations release the stakes. Duel adjustments enter the XP ledger and appear in Practice and applicable rankings.
+- **Notifications** shows duel invitations and results, your own achievement unlocks, and changes to your group XP. Opening a group notification requires current membership. [Phase 6 evaluation](docs/evaluation/phase-06/eval.md)
 
 ### Try practice rewards
 
@@ -44,7 +47,7 @@ Open **Practice** to see your XP history and weekly goal. **Overview** shows dai
 
 - Your first sign-in or active workspace visit each UTC day earns 5 personal XP and counts toward Orbit Cycle. The app shows pop-ups for daily login rewards, verified solves, and new achievements. Coding streaks in Analytics use solve days. A current streak can include a run ending yesterday.
 - The Problem of the Day awards 50 XP for a qualifying first solve. The daily quest awards 30 XP for a first solve from the listed Array problems. The weekly quest awards 100 XP for three distinct first solves. The starter LeetCode rotation uses [Two Sum](https://leetcode.com/problems/two-sum/), [Binary Search](https://leetcode.com/problems/binary-search/), and [Best Time to Buy and Sell Stock](https://leetcode.com/problems/best-time-to-buy-and-sell-stock/).
-- Daily windows begin at midnight UTC and weekly windows begin at midnight UTC on Monday. A solve at the closing instant belongs to the next window. An in-window solve must be recorded before the cutoff, 24 hours after closing. A qualifying late bonus appears in XP history after delivery. Live solve imports are gated by Phase 0. [Phase 5 evaluation](docs/evaluation/phase-05/eval.md) · [Phase 0 integration decision](docs/evaluation/phase-00/evidence.md)
+- Daily windows begin at midnight UTC and weekly windows begin at midnight UTC on Monday. A solve at the closing instant belongs to the next window. An in-window solve must be recorded before the cutoff, 24 hours after closing. A qualifying late bonus appears in XP history after delivery. [Phase 5 evaluation](docs/evaluation/phase-05/eval.md)
 
 ### Explore personal analytics
 

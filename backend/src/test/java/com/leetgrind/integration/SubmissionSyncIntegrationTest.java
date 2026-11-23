@@ -8,6 +8,7 @@ import static com.leetgrind.integration.ActivityProvider.Outcome.REJECTED;
 import static com.leetgrind.integration.ActivityProvider.Result.COMPLETE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.when;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -46,6 +47,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -77,6 +79,7 @@ class SubmissionSyncIntegrationTest {
     @Autowired MeterRegistry meters;
     @Autowired OperationsMetrics operations;
     @Autowired PlatformTransactionManager manager;
+    @MockitoBean ProfilePreview previews;
 
     @BeforeEach
     void resetClock() {
@@ -166,6 +169,48 @@ class SubmissionSyncIntegrationTest {
         assertThat(call("DELETE", "/me/leetcode-link", null, owner.token()).statusCode()).isEqualTo(204);
         assertThat(links.status(owner.id()).state()).isEqualTo("DISCONNECTED");
         assertThat(total(owner.id())).isEqualTo(35);
+    }
+
+    @Test
+    void ownedPublicSolveCreditsPracticeAndBothLeaderboardsOnlyOnce() throws Exception {
+        var owner = registerAndLogin();
+        var link = body(call("GET", "/me/leetcode-link", null, owner.token()));
+        String handle = link.path("handle").asText();
+        String code = link.path("ownershipCode").asText();
+        assertThat(code).matches("lg-[0-9a-f]{20}");
+        var group = body(call("POST", "/groups", Map.of("name", "Public solve test"), owner.token()));
+        String groupId = group.path("id").asText();
+
+        when(previews.read(owner.id(), handle)).thenReturn(publicSnapshot(handle, "Unrelated person", START));
+        assertThat(call("POST", "/me/leetcode-link/verify", null, owner.token()).statusCode()).isEqualTo(409);
+        assertThat(total(owner.id())).isZero();
+
+        clock.advance(4);
+        when(previews.read(owner.id(), handle)).thenReturn(publicSnapshot(handle, "Learner " + code, START.plusSeconds(2)));
+        var verified = call("POST", "/me/leetcode-link/verify", null, owner.token());
+        assertThat(verified.statusCode()).isEqualTo(200);
+        assertThat(body(verified).path("state").asText()).isEqualTo("VERIFIED");
+        assertThat(total(owner.id())).isEqualTo(25);
+
+        clock.advance(3);
+        assertThat(call("POST", "/me/leetcode-link/sync", null, owner.token()).statusCode()).isEqualTo(202);
+        assertThat(call("POST", "/me/leetcode-link/sync", null, owner.token()).statusCode()).isEqualTo(202);
+        assertThat(total(owner.id())).isEqualTo(25);
+        assertThat(outboxCount(owner.id())).isEqualTo(1);
+        assertThat(body(call("GET", "/me/rewards", null, owner.token())).path("totalXp").asInt()).isEqualTo(30);
+        assertThat(body(call("GET", "/leaderboard", null, owner.token())).path("items").get(0).path("xp").asInt()).isEqualTo(30);
+        assertThat(body(call("GET", "/groups/" + groupId + "/leaderboard", null, owner.token()))
+                .path("items").get(0).path("xp").asInt()).isEqualTo(25);
+
+        when(previews.read(owner.id(), handle)).thenReturn(publicSnapshot(handle, "Unrelated person", START.plusSeconds(3)));
+        assertThat(call("POST", "/me/leetcode-link/sync", null, owner.token()).statusCode()).isEqualTo(409);
+        assertThat(total(owner.id())).isEqualTo(25);
+    }
+
+    private static ProfilePreview.Snapshot publicSnapshot(String handle, String name, Instant acceptedAt) {
+        return new ProfilePreview.Snapshot(handle, name, null, new ProfilePreview.Counts(1, 0, 1, 0),
+                new ProfilePreview.Heatmap(0, 0, List.of()),
+                List.of(new ProfilePreview.Submission("Merge Intervals", "merge-intervals", acceptedAt.getEpochSecond(), null, null)));
     }
 
     @Test

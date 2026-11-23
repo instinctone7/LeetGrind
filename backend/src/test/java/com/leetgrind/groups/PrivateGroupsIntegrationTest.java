@@ -25,6 +25,8 @@ import com.leetgrind.platform.ApiErrors.Failure;
 import com.leetgrind.platform.Utc;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -375,7 +377,9 @@ class PrivateGroupsIntegrationTest {
         assertThat(call("POST", "/groups/" + privateGroup + "/join", null, viewer.token()).statusCode()).isEqualTo(404);
         assertThat(call("POST", group + "/join", null, viewer.token()).statusCode()).isEqualTo(200);
         assertThat(call("POST", group + "/join", null, viewer.token()).statusCode()).isEqualTo(200);
-        assertThat(call("GET", group + "/activity", null, viewer.token()).statusCode()).isEqualTo(200);
+        assertThat(call("GET", group + "/activity", null, viewer.token()).statusCode()).isEqualTo(404);
+        assertThat(call("POST", group + "/challenges", Map.of("title", "Retired", "kind", "GROUP", "rule", "COUNT",
+                "target", 1, "endsAt", JOIN.plusSeconds(600).toString()), owner.token()).statusCode()).isEqualTo(404);
         assertThat(groups.detail(Long.parseLong(groupId), Long.parseLong(owner.id())).members()).hasSize(2);
         assertThat(body(call("GET", "/groups/public", null, viewer.token())).values().stream()
                 .map(row -> row.path("id").asText()).toList()).doesNotContain(groupId);
@@ -429,7 +433,60 @@ class PrivateGroupsIntegrationTest {
         challenges.finalizeNext();
         assertThat(challenges.detail(group, owner, challenge)).isEqualTo(result);
         assertThat(activity.inbox(member, Long.MAX_VALUE).stream().filter(n -> view.challenge().id().equals(n.challengeId())))
-                .extracting(GroupActivity.Notice::kind).containsExactly("CHALLENGE_RESULT", "INVITATION");
+                .isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void timedDuelUsesCanonicalProblemAndSettlesXpAtTheDeadline(boolean matchingSolve) throws Exception {
+        var owner = login();
+        var opponent = login();
+        long ownerId = Long.parseLong(owner.id());
+        long opponentId = Long.parseLong(opponent.id());
+        long group = create(ownerId);
+        invites.redeem(opponentId, invites.create(group, ownerId, 24, 1).code());
+        clock.now = JOIN;
+        String base = "/groups/" + group;
+        var draft = new HashMap<String, Object>(Map.of("inviteeId", opponent.id(),
+                "problemUrl", "https://www.leetcode.com/problems/two-sum/description/?envType=study",
+                "durationMinutes", 10, "stakeXp", 5));
+        var wrong = new HashMap<>(draft);
+        wrong.put("problemUrl", "https://leetcode.com.example.test/problems/two-sum/");
+        assertThat(call("POST", base + "/duels", wrong, owner.token()).statusCode()).isEqualTo(400);
+        wrong.put("durationMinutes", 9);
+        wrong.put("problemUrl", draft.get("problemUrl"));
+        assertThat(call("POST", base + "/duels", wrong, owner.token()).statusCode()).isEqualTo(400);
+
+        var created = call("POST", base + "/duels", draft, owner.token());
+        assertThat(created.statusCode()).isEqualTo(201);
+        var duel = body(created).path("challenge");
+        long id = duel.path("id").asLong();
+        assertThat(duel.path("problemUrl").asText()).isEqualTo("https://leetcode.com/problems/two-sum/");
+        assertThat(duel.path("status").asText()).isEqualTo("AWAITING_OPPONENT");
+        assertThat(call("POST", base + "/duels", draft, owner.token()).statusCode()).isEqualTo(409);
+        assertThat(challenges.duelSummary(group, ownerId).availableXp()).isZero();
+
+        clock.now = JOIN.plusSeconds(30);
+        var active = challenges.enroll(group, opponentId, id).challenge();
+        assertThat(active.startsAt()).isEqualTo(clock.now);
+        assertThat(active.endsAt()).isEqualTo(clock.now.plusSeconds(600));
+        clock.now = JOIN.plusSeconds(90);
+        credit(ownerId, "LEETCODE", JOIN.plusSeconds(20), 10, "BASE_SOLVE", "two-sum", Difficulty.EASY);
+        credit(opponentId, "LEETCODE", JOIN.plusSeconds(60), 10, "BASE_SOLVE", "valid-parentheses", Difficulty.EASY);
+        if (matchingSolve) credit(ownerId, "LEETCODE", JOIN.plusSeconds(75), 10, "BASE_SOLVE", "two-sum", Difficulty.EASY);
+        assertThat(challenges.detail(group, ownerId, id).participants().stream()
+                .filter(p -> p.id().equals(owner.id())).findFirst().orElseThrow().score()).isEqualTo(matchingSolve ? 1 : 0);
+
+        clock.now = active.endsAt();
+        for (int i = 0; i < 40 && challenges.finalizeNext(); i++) {
+            // Clear any other test deadlines due before this one.
+        }
+        var result = challenges.detail(group, ownerId, id);
+        assertThat(result.challenge().outcome()).isEqualTo(matchingSolve ? "WIN" : "NO_SCORE");
+        assertThat(result.challenge().xpDelta()).isEqualTo(matchingSolve ? 5 : -5);
+        assertThat(challenges.detail(group, opponentId, id).challenge().xpDelta()).isEqualTo(-5);
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM xp_entries WHERE reward_key = ?")
+                .param("DUEL:" + id).query(Long.class).single()).isEqualTo(2);
     }
 
     @Test
@@ -453,7 +510,7 @@ class PrivateGroupsIntegrationTest {
         assertThat(body(created).path("challenge").path("status").asText()).isEqualTo("AWAITING_OPPONENT");
         assertThat(call("GET", duel, null, observer.token()).statusCode()).isEqualTo(404);
         assertThat(call("POST", duel + "/enrollment", null, observer.token()).statusCode()).isEqualTo(404);
-        assertThat(body(call("GET", base + "/activity?mode=demo", null, observer.token())).size()).isZero();
+        assertThat(call("GET", base + "/activity?mode=demo", null, observer.token()).statusCode()).isEqualTo(404);
         var item = body(call("GET", "/me/notifications", null, member.token())).get(0);
         assertThat(item.path("kind").asText()).isEqualTo("INVITATION");
         activity.challengeNotice(memberId, "INVITATION", group, Long.parseLong(id), clock.now.plusSeconds(1));

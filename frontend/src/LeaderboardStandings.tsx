@@ -13,7 +13,7 @@ const periods: { value: StandingsPeriod; label: string }[] = [
 ]
 
 function ScoreBar({ xp, leaderXp, label = number.format(xp) + ' XP' }: { xp: number; leaderXp: number; label?: string }) {
-  const percent = leaderXp > 0 ? Math.round(100 * xp / leaderXp) : 0
+  const percent = leaderXp > 0 ? Math.max(0, Math.round(100 * xp / leaderXp)) : 0
   return <div className="ranking-score">
     <div><strong>{label}</strong><span>{leaderXp > 0 ? `${percent}% of leader` : 'No XP yet'}</span></div>
     <span className="ranking-track" aria-hidden="true"><span style={{ width: `${percent}%` }} /></span>

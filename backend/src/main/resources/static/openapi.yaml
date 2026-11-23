@@ -272,7 +272,11 @@ paths:
                         title: {type: string}
                         titleSlug: {type: string}
                         timestamp: {type: integer, format: int64}
-                        lang: {type: string}
+                        lang: {type: [string, 'null']}
+                        difficulty:
+                          type: [string, 'null']
+                          enum: [EASY, MEDIUM, HARD, null]
+                          description: Problem difficulty when available for a public accepted submission.
         '204':
           description: Profile previews are disabled for this deployment.
         '400':
@@ -287,10 +291,27 @@ paths:
           $ref: '#/components/responses/ApiError'
         '502':
           $ref: '#/components/responses/ApiError'
+  /me/leetcode-link/verify:
+    post:
+      operationId: verifyLeetcodeLink
+      summary: Verify control of the saved public LeetCode profile
+      security:
+        - AccessToken: []
+      responses:
+        '200':
+          $ref: '#/components/responses/LinkStatus'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '409':
+          $ref: '#/components/responses/ApiError'
+        '429':
+          $ref: '#/components/responses/ApiError'
+        '502':
+          $ref: '#/components/responses/ApiError'
   /me/leetcode-link/sync:
     post:
       operationId: syncLeetcodeLink
-      summary: Queue synchronization or return the existing queued, running, or retry state
+      summary: Sync the newest public LeetCode solve or queue demo synchronization
       security:
         - AccessToken: []
       responses:
@@ -301,6 +322,8 @@ paths:
         '409':
           $ref: '#/components/responses/ApiError'
         '429':
+          $ref: '#/components/responses/ApiError'
+        '502':
           $ref: '#/components/responses/ApiError'
   /me/progress:
     get:
@@ -1076,6 +1099,74 @@ paths:
           $ref: '#/components/responses/ApiError'
         '404':
           $ref: '#/components/responses/ApiError'
+  /groups/{groupId}/duels:
+    parameters:
+    - name: groupId
+      in: path
+      required: true
+      schema: {type: string}
+    post:
+      operationId: createTimedDuel
+      summary: Validate a LeetCode problem and invite a group member to a timed XP duel
+      security:
+      - AccessToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [inviteeId, problemUrl, durationMinutes, stakeXp]
+              properties:
+                inviteeId: {type: string}
+                problemUrl: {type: string, format: uri, maxLength: 300}
+                durationMinutes: {type: integer, minimum: 10, maximum: 120}
+                stakeXp: {type: integer, enum: [5, 25, 50, 100]}
+      responses:
+        '201':
+          description: The invitation and server-validated problem.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChallengeView'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '404':
+          $ref: '#/components/responses/ApiError'
+        '409':
+          $ref: '#/components/responses/ApiError'
+        '429':
+          $ref: '#/components/responses/ApiError'
+  /groups/{groupId}/duels/summary:
+    parameters:
+    - name: groupId
+      in: path
+      required: true
+      schema: {type: string}
+    get:
+      operationId: getDuelSummary
+      summary: Get available XP and duel results for the current group
+      security:
+      - AccessToken: []
+      responses:
+        '200':
+          description: Available XP excludes reserved stakes on unsettled duels.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [availableXp, wins, losses, netXp]
+                properties:
+                  availableXp: {type: integer, format: int64}
+                  wins: {type: integer, format: int64}
+                  losses: {type: integer, format: int64}
+                  netXp: {type: integer, format: int64}
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '404':
+          $ref: '#/components/responses/ApiError'
   /groups/{groupId}/challenges:
     get:
       operationId: listGroupChallenges
@@ -1105,8 +1196,8 @@ paths:
         '404':
           $ref: '#/components/responses/ApiError'
     post:
-      operationId: createGroupChallenge
-      summary: Publish a challenge or invite an opponent to a duel
+      operationId: createFixtureDuel
+      summary: Invite an opponent to a legacy fixture duel
       security:
       - AccessToken: []
       parameters:
@@ -1182,33 +1273,6 @@ paths:
         '404':
           $ref: '#/components/responses/ApiError'
         '409':
-          $ref: '#/components/responses/ApiError'
-  /groups/{groupId}/activity:
-    get:
-      operationId: getGroupActivity
-      summary: Get the latest 40 group activity items
-      security:
-      - AccessToken: []
-      parameters:
-      - $ref: '#/components/parameters/CompetitionGroupId'
-      - $ref: '#/components/parameters/CompetitionMode'
-      responses:
-        '200':
-          description: Successful request.
-          headers:
-            X-Correlation-ID:
-              $ref: '#/components/headers/CorrelationId'
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/GroupActivityItem'
-        '400':
-          $ref: '#/components/responses/ApiError'
-        '401':
-          $ref: '#/components/responses/ApiError'
-        '404':
           $ref: '#/components/responses/ApiError'
   /me/notifications:
     get:
@@ -1514,12 +1578,12 @@ components:
         description: {type: string}
     ChallengeRequest:
       type: object
-      required: [title, kind, rule, endsAt]
+      required: [title, kind, rule, mode, inviteeId, endsAt]
       properties:
         title: {type: string, minLength: 1, maxLength: 80}
-        kind: {type: string, enum: [GROUP, DUEL]}
+        kind: {type: string, enum: [DUEL]}
         rule: {type: string, enum: [PROBLEM, COUNT, DIFFICULTY]}
-        mode: {type: string, enum: [live, demo], default: live}
+        mode: {type: string, enum: [demo]}
         inviteeId:
           type: string
           description: Required for duels. The invited account must be a current member of the group.
@@ -1558,6 +1622,11 @@ components:
         enrolled: {type: integer, minimum: 0}
         finalizedAt: {type: [string, 'null'], format: date-time}
         outcome: {type: [string, 'null'], enum: [WIN, TIE, NO_SCORE, CANCELLED, null]}
+        durationMinutes: {type: [integer, 'null'], minimum: 10, maximum: 120}
+        stakeXp: {type: [integer, 'null']}
+        problemUrl: {type: [string, 'null'], format: uri}
+        xpDelta: {type: [integer, 'null']}
+        opponent: {type: [string, 'null']}
     ChallengeView:
       type: object
       required: [challenge, participants, canEnroll]
@@ -1576,18 +1645,8 @@ components:
               enrolledAt: {type: [string, 'null'], format: date-time}
               score: {type: integer, minimum: 0}
               winner: {type: boolean}
+              xpDelta: {type: [integer, 'null']}
         canEnroll: {type: boolean}
-    GroupActivityItem:
-      type: object
-      required: [kind, at, label, displayName, handle, xp, challengeId]
-      properties:
-        kind: {type: string, enum: [SOLVE, CHALLENGE_CREATED, CHALLENGE_RESULT]}
-        at: {type: string, format: date-time}
-        label: {type: string}
-        displayName: {type: [string, 'null']}
-        handle: {type: [string, 'null']}
-        xp: {type: [integer, 'null']}
-        challengeId: {type: [string, 'null']}
     Notification:
       type: object
       required: [id, kind, label, groupId, groupName, challengeId, challengeTitle, createdAt, readAt]
@@ -2017,14 +2076,13 @@ components:
                 minimum: 1
               xp:
                 type: integer
-                minimum: 0
         nextCursor:
           type:
           - string
           - 'null'
     LinkStatus:
       type: object
-      required: [state, handle, fixture, demoAvailable, previewEnabled, syncAvailable, providerPaused, syncState, failureCode, coverageUncertain, activatedAt, lastAttemptAt, lastSuccessfulSyncAt, nextSyncAt, manualSyncAvailableAt]
+      required: [state, handle, fixture, demoAvailable, previewEnabled, syncAvailable, ownershipCode, providerPaused, syncState, failureCode, coverageUncertain, activatedAt, lastAttemptAt, lastSuccessfulSyncAt, nextSyncAt, manualSyncAvailableAt]
       properties:
         state:
           type: string
@@ -2039,6 +2097,9 @@ components:
           type: boolean
         syncAvailable:
           type: boolean
+        ownershipCode:
+          type: [string, 'null']
+          description: Code to keep as a separate word in the public LeetCode Real Name while solve sync is enabled.
         providerPaused:
           type: boolean
         syncState:

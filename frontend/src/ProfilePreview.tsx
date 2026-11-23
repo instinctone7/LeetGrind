@@ -36,16 +36,18 @@ function LeetCodeSnapshot({ profile }: { profile: LeetCodePreview }) {
         <summary>Recent accepted submissions</summary>
         <ul className="group-list">{profile.recentSubmissions.map((item, index) =>
           <li key={item.titleSlug + ':' + item.timestamp + ':' + index}>
-            <span>{item.title}<small>{item.lang}</small></span>
+            <span>{item.title}<small>{[item.difficulty?.toLowerCase(), item.lang].filter(Boolean).join(' · ')}</small></span>
             <span>{new Date(item.timestamp * 1000).toLocaleDateString(undefined, { timeZone: 'UTC' })}</span>
           </li>)}</ul>
       </details>}
     </div>
 }
 
-export function ProfileLeetCode({ accountId, requestedUrl }: { accountId: string; requestedUrl: string }) {
+export function ProfileLeetCode({ accountId, requestedUrl, onboarding = false }: {
+  accountId: string; requestedUrl: string; onboarding?: boolean
+}) {
   const publicProfile = usePublicLeetCode()
-  const { publish } = publicProfile
+  const { publish, updateLink } = publicProfile
   const [handle, setHandle] = useState(requestedUrl)
   const [link, setLink] = useState<LinkStatus | null>(null)
   const [profile, setProfile] = useState<LeetCodePreview | null>(null)
@@ -111,6 +113,7 @@ export function ProfileLeetCode({ accountId, requestedUrl }: { accountId: string
     void perform(async () => {
       const saved = await practiceApi.link(accountId, handle)
       setLink(saved)
+      updateLink(saved)
       setHandle(saved.handle ?? '')
       if (!saved.fixture && profile?.username.toLowerCase() === saved.handle && profile) {
         publish(profile)
@@ -130,7 +133,13 @@ export function ProfileLeetCode({ accountId, requestedUrl }: { accountId: string
   const displayed = requestedUrl ? profile : publicProfile.snapshot
   const message = error || (!requestedUrl ? publicProfile.error : '')
   return <section className="account-deletion" aria-labelledby="account-leetcode-heading">
-    <h2 id="account-leetcode-heading">LeetCode profile</h2>
+    <h2 id="account-leetcode-heading">{onboarding && linked?.state !== 'VERIFIED' ? 'Verify your LeetCode profile' : 'LeetCode profile'}</h2>
+    {onboarding && linked?.state === 'PENDING' && linked.ownershipCode && <ol className="profile-verification-steps">
+      <li>Copy your verification code <code>{linked.ownershipCode}</code>.</li>
+      <li>On LeetCode, add the code as a separate word in your public <strong>Real Name</strong> and save.</li>
+      <li>Return here and select <strong>Verify profile</strong> to check your newest accepted solve for XP.</li>
+    </ol>}
+    {onboarding && link && !link.previewEnabled && <p className="muted">LeetCode verification is currently unavailable on this deployment.</p>}
     {!loading && <p role="status">{linked ? statusText(linked, Boolean(displayed)) : 'No profile linked'}{linked?.handle ? ' · ' + linked.handle : ''}</p>}
     <form onSubmit={save}>
       <label>LeetCode handle or profile URL
@@ -140,7 +149,13 @@ export function ProfileLeetCode({ accountId, requestedUrl }: { accountId: string
       <button type="submit" disabled={loading || saving}>{saving ? 'Saving…' : 'Save LeetCode profile'}</button>
     </form>
     {linked && <div className="practice-actions">
-      {linked.syncAvailable && <button type="button" className="text-button" disabled={saving || linked.syncState !== 'IDLE'}
+      {linked.state === 'PENDING' && linked.ownershipCode && <button type="button" className="text-button" disabled={saving}
+        onClick={() => void perform(async () => {
+          const verified = await practiceApi.verify(accountId)
+          setLink(verified)
+          updateLink(verified)
+        })}>Verify profile</button>}
+      {linked.syncAvailable && <button type="button" className="text-button" disabled={saving || linked.fixture && linked.syncState !== 'IDLE'}
         onClick={() => void perform(async () => { setLink(await practiceApi.sync(accountId)) })}>Sync now</button>}
       {(linked.state === 'VERIFIED' || linked.state === 'PENDING') &&
         <button type="button" className="text-button" disabled={saving} onClick={() => void perform(async () => {
@@ -148,9 +163,16 @@ export function ProfileLeetCode({ accountId, requestedUrl }: { accountId: string
           setHandle('')
           setProfile(null)
           publish(null)
-          setLink(await practiceApi.status(accountId))
+          const disconnected = await practiceApi.status(accountId)
+          setLink(disconnected)
+          updateLink(disconnected)
         })}>Disconnect profile</button>}
     </div>}
+    {linked?.ownershipCode && (!onboarding || linked.state === 'VERIFIED') && <p className="muted">
+      {linked.state === 'PENDING'
+        ? <>Add <code>{linked.ownershipCode}</code> to your public LeetCode Real Name, then select <strong>Verify profile</strong> to check your newest accepted solve.</>
+        : <>Keep <code>{linked.ownershipCode}</code> in your public LeetCode Real Name to continue syncing solve XP.</>}
+    </p>}
     {linked?.lastSuccessfulSyncAt && linked.state === 'VERIFIED' && <p className="muted">Last successful sync ·{' '}
       <time dateTime={linked.lastSuccessfulSyncAt}>{new Date(linked.lastSuccessfulSyncAt).toLocaleString(undefined, { timeZone: 'UTC' })} UTC</time>
     </p>}

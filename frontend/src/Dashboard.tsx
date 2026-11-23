@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { ApiError, competitionApi, groupsApi, practiceApi, rewardsApi } from './api'
-import type { FeedItem, Group, GroupFeatured, LeetCodePreview, LinkStatus, Profile, RewardsProgress, Standings, XpEntry } from './api'
+import { ApiError, groupsApi, practiceApi, rewardsApi } from './api'
+import type { Group, GroupFeatured, LeetCodePreview, LinkStatus, Profile, RewardsProgress, Standings, XpEntry } from './api'
 import { Avatar, Icon } from './Icons'
 import { RewardCountdown } from './QuestBoard'
 import { PublicLeetCodeStats, usePublicLeetCode } from './PublicLeetCode'
@@ -12,10 +12,11 @@ const timeLabel = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'num
 const number = new Intl.NumberFormat()
 const xpReasons: Record<string, string> = {
   DAILY_LOGIN: 'Daily login', FEATURED: 'Featured problem bonus', DAILY_QUEST: 'Daily quest bonus', WEEKLY_QUEST: 'Weekly quest bonus',
+  DUEL_WIN: 'Duel victory', DUEL_LOSS: 'Duel loss',
 }
 
 type DashboardData = { rewards: RewardsProgress; history: XpEntry[]; link: LinkStatus }
-type GroupData = { standings: Standings; feed: FeedItem[]; featured: GroupFeatured }
+type GroupData = { standings: Standings; featured: GroupFeatured }
 type Task = RewardsProgress['quests'][number]
 
 function Action({ children, onClick, className = '' }: { children: ReactNode; onClick: () => void; className?: string }) {
@@ -38,39 +39,14 @@ function SyncStatus({ link, onProfile }: { link?: LinkStatus; onProfile: () => v
   </button>
 }
 
-function Activity({ profile, group, groupData, history, onGroups, onPractice, onChallenge }: {
-  profile: Profile
-  group?: Group
-  groupData: GroupData | null
-  history: XpEntry[]
-  onGroups: () => void
-  onPractice: () => void
-  onChallenge: (id: string) => void
-}) {
-  const groupItems = groupData?.feed.slice(0, 5) ?? []
+function Activity({ profile, history, onPractice }: { profile: Profile; history: XpEntry[]; onPractice: () => void }) {
   const personal = history.filter(item => item.provider !== 'FIXTURE').slice(0, 5)
   return <section className="deck-panel feed-panel" aria-labelledby="overview-feed">
     <header className="deck-header feed-heading">
-      <h2 className="deck-kicker" id="overview-feed"><span className="signal-dot signal-green" aria-hidden="true" />
-        {group ? 'Group telemetry' : 'Practice telemetry'}</h2>
-      {group ? <Action onClick={onGroups}>{group.name} <Icon name="arrow_forward" /></Action>
-        : <Action onClick={onPractice}>XP history <Icon name="arrow_forward" /></Action>}
+      <h2 className="deck-kicker" id="overview-feed"><span className="signal-dot signal-green" aria-hidden="true" /> Practice telemetry</h2>
+      <Action onClick={onPractice}>XP history <Icon name="arrow_forward" /></Action>
     </header>
-    {group ? groupItems.length ? <ul className="deck-list">
-      {groupItems.map((item, index) => <li key={item.kind + item.at + index} className="telemetry-row">
-        <Avatar name={item.displayName ?? group.name} className={`tone-${index % 3}`} />
-        <div className="telemetry-detail">
-          {item.kind === 'SOLVE' ? <><strong>{item.displayName}</strong><span className="muted"> solved </span><span>{item.label}</span></>
-            : <><span className="muted">{item.kind === 'CHALLENGE_CREATED' ? 'Competition opened' : 'Result available'} · </span>
-              {item.challengeId && <Action onClick={() => onChallenge(item.challengeId!)}>{item.label}</Action>}</>}
-        </div>
-        <div className="telemetry-meta">
-          {item.xp !== null && <span className="xp-accent">+{number.format(item.xp)} XP</span>}
-          <time dateTime={item.at}>{timeLabel.format(new Date(item.at))}</time>
-        </div>
-      </li>)}
-    </ul> : <EmptyFeed icon="group" text="Group solves and competition updates will appear here." /> :
-      personal.length ? <ul className="deck-list">
+    {personal.length ? <ul className="deck-list">
         {personal.map((item, index) => <li key={item.id} className="telemetry-row">
           <Avatar name={profile.displayName} className={`tone-${index % 3}`} />
           <div className="telemetry-detail">
@@ -225,16 +201,14 @@ function CodingActivity({ rewards, snapshot, onAnalytics }: {
   </section>
 }
 
-export function Dashboard({ profile, group, onGroups, onLeaderboard, onPractice, onProfile, onQuests, onAnalytics, onChallenge }: {
+export function Dashboard({ profile, group, onLeaderboard, onPractice, onProfile, onQuests, onAnalytics }: {
   profile: Profile
   group?: Group
-  onGroups: () => void
   onLeaderboard: () => void
   onPractice: () => void
   onProfile: () => void
   onQuests: () => void
   onAnalytics: () => void
-  onChallenge: (id: string) => void
 }) {
   const { snapshot, refresh, error: profileError } = usePublicLeetCode()
   const [refreshingProfile, setRefreshingProfile] = useState(false)
@@ -251,7 +225,6 @@ export function Dashboard({ profile, group, onGroups, onLeaderboard, onPractice,
       fetching = true
       const groupRequest = groupId ? Promise.all([
         groupsApi.standings(profile.id, groupId, 'live', 'weekly', ''),
-        competitionApi.feed(profile.id, groupId, 'live'),
         rewardsApi.groupFeatured(profile.id, groupId, 'live'),
       ]) : Promise.resolve(null)
       const [self, team] = await Promise.allSettled([Promise.all([
@@ -263,8 +236,8 @@ export function Dashboard({ profile, group, onGroups, onLeaderboard, onPractice,
           setPersonal({ rewards, history: history.items, link })
         }
         if (team.status === 'fulfilled' && team.value) {
-          const [standings, feed, featured] = team.value
-          setGroupData({ standings, feed, featured })
+          const [standings, featured] = team.value
+          setGroupData({ standings, featured })
         } else {
           setGroupData(null)
         }
@@ -298,8 +271,7 @@ export function Dashboard({ profile, group, onGroups, onLeaderboard, onPractice,
       <SyncStatus link={personal?.link.fixture ? undefined : personal?.link} onProfile={onProfile} />
     </section>
     {error && <p className="notice error" role="alert">{error}</p>}
-    <Activity profile={profile} group={group} groupData={groupData} history={personal?.history ?? []}
-      onGroups={onGroups} onPractice={onPractice} onChallenge={onChallenge} />
+    <Activity profile={profile} history={personal?.history ?? []} onPractice={onPractice} />
 
     <div className="deck-metrics">
       <Metric title="Practice XP" icon="bolt" value={rewards ? number.format(rewards.totalXp) : '—'} unit="Total XP">

@@ -15,6 +15,8 @@ import java.util.Locale;
 import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.leetgrind.catalog.ProblemCatalog.Difficulty;
+import com.leetgrind.catalog.ProblemCatalog.Problem;
 import com.leetgrind.platform.ApiErrors.Failure;
 import com.leetgrind.platform.FixedWindowRateLimiter;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,7 +30,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 @Service
-class ProfilePreview {
+public class ProfilePreview {
     private static final int MAX_BYTES = 128 * 1024;
 
     private static final String PROFILE_QUERY = """
@@ -42,6 +44,11 @@ class ProfilePreview {
               recentAcSubmissionList(username: $username, limit: $limit) {
                 title titleSlug timestamp
               }
+            }
+            """;
+    private static final String PROBLEM_QUERY = """
+            query ProblemDifficulty($slug: String!) {
+              question(titleSlug: $slug) { titleSlug title difficulty }
             }
             """;
 
@@ -93,7 +100,7 @@ class ProfilePreview {
                     ? client.post().uri("/graphql/").contentType(MediaType.APPLICATION_JSON)
                         .body(Map.of("query", PROFILE_QUERY, "variables", Map.of("username", handle, "limit", 20)))
                     : client.get().uri("/api/leetcode/user/{handle}", handle);
-            return request.accept(MediaType.APPLICATION_JSON).exchange((sent, response) -> {
+            Snapshot snapshot = request.accept(MediaType.APPLICATION_JSON).exchange((sent, response) -> {
                 if (response.getStatusCode().value() == 404 && !direct) throw notFound();
                 if (!response.getStatusCode().is2xxSuccessful()) throw unavailable();
                 var body = response.getBody().readNBytes(MAX_BYTES + 1);
@@ -108,9 +115,72 @@ class ProfilePreview {
                 }
                 return preview;
             });
+            return direct ? withLatestDifficulty(snapshot) : snapshot;
         } catch (RestClientException | tools.jackson.core.JacksonException | IllegalArgumentException failure) {
             throw unavailable();
         }
+    }
+
+    private Snapshot withLatestDifficulty(Snapshot snapshot) {
+        if (snapshot.recentSubmissions().isEmpty()) return snapshot;
+        Submission latest = snapshot.recentSubmissions().getFirst();
+        String slug = latest.titleSlug();
+        if (slug == null || !slug.matches("[a-z0-9-]{1,128}")) return snapshot;
+
+        try {
+            Difficulty difficulty = client.post().uri("/graphql/").contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .body(Map.of("query", PROBLEM_QUERY, "variables", Map.of("slug", slug)))
+                    .exchange((sent, response) -> {
+                        if (!response.getStatusCode().is2xxSuccessful()) return null;
+                        byte[] body = response.getBody().readNBytes(MAX_BYTES + 1);
+                        return body.length > MAX_BYTES ? null : questionDifficulty(json.readTree(body), slug);
+                    });
+            if (difficulty == null) return snapshot;
+            var submissions = new ArrayList<>(snapshot.recentSubmissions());
+            submissions.set(0, new Submission(latest.title(), slug, latest.timestamp(), latest.lang(), difficulty));
+            return new Snapshot(snapshot.username(), snapshot.realName(), snapshot.ranking(),
+                    snapshot.problemsSolved(), snapshot.heatmap(), submissions);
+        } catch (RestClientException | tools.jackson.core.JacksonException | IllegalArgumentException failure) {
+            return snapshot;
+        }
+    }
+
+    public Problem duelProblem(String slug) {
+        if (!enabled || !slug.matches("[a-z0-9]+(?:-[a-z0-9]+)*") || slug.length() > 128) return null;
+        try {
+            RestClient.RequestHeadersSpec<?> request = direct
+                    ? client.post().uri("/graphql/").contentType(MediaType.APPLICATION_JSON)
+                        .body(Map.of("query", PROBLEM_QUERY, "variables", Map.of("slug", slug)))
+                    : client.get().uri("/api/leetcode/problem/{slug}", slug);
+            return request.accept(MediaType.APPLICATION_JSON).exchange((sent, response) -> {
+                        if (!response.getStatusCode().is2xxSuccessful()) return null;
+                        byte[] payload = response.getBody().readNBytes(MAX_BYTES + 1);
+                        if (payload.length > MAX_BYTES) return null;
+                        JsonNode root = json.readTree(payload);
+                        JsonNode question = direct ? root.path("data").path("question") : root;
+                        Difficulty difficulty = direct ? questionDifficulty(root, slug)
+                                : slug.equals(question.path("titleSlug").asString(null))
+                                    ? Difficulty.valueOf(question.path("difficulty").asString("").toUpperCase(Locale.ROOT)) : null;
+                        String title = question.path("title").asString("").strip();
+                        return difficulty == null || title.isBlank() || title.length() > 160 ? null
+                                : new Problem(slug, slug, title, difficulty);
+                    });
+        } catch (RestClientException | tools.jackson.core.JacksonException | IllegalArgumentException failure) {
+            return null;
+        }
+    }
+
+    static Difficulty questionDifficulty(JsonNode root, String slug) {
+        if (!root.isObject() || root.path("errors").size() != 0) return null;
+        JsonNode question = root.path("data").path("question");
+        if (!slug.equals(question.path("titleSlug").asString(null))) return null;
+        return switch (question.path("difficulty").asString("")) {
+            case "Easy" -> Difficulty.EASY;
+            case "Medium" -> Difficulty.MEDIUM;
+            case "Hard" -> Difficulty.HARD;
+            default -> null;
+        };
     }
 
     private String savedHandle(long account) {
@@ -154,7 +224,7 @@ class ProfilePreview {
             JsonNode timestamp = item.path("timestamp");
             submissions.add(new Submission(item.path("title").asString(null), item.path("titleSlug").asString(null),
                     timestamp.isIntegralNumber() ? timestamp.longValue() : Long.parseLong(timestamp.asString("")),
-                    item.path("lang").asString(null)));
+                    item.path("lang").asString(null), null));
         }
         submissions.sort(Comparator.comparingLong(Submission::timestamp).reversed());
         JsonNode profile = user.path("profile");
@@ -181,5 +251,5 @@ class ProfilePreview {
     @JsonIgnoreProperties(ignoreUnknown = true)
     record Day(LocalDate date, int submissions) {}
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record Submission(String title, String titleSlug, long timestamp, String lang) {}
+    record Submission(String title, String titleSlug, long timestamp, String lang, Difficulty difficulty) {}
 }

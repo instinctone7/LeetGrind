@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { createRoot } from 'react-dom/client'
 import { accountApi, ApiError } from './api'
@@ -28,6 +28,8 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<Notice | null>(null)
+  const [verificationOnboarding, setVerificationOnboarding] = useState(false)
+  const pendingVerification = useRef<string | null>(null)
 
   function showProfile(next: Profile) {
     setProfile(next)
@@ -48,15 +50,32 @@ function App() {
     setNotice(null)
     try {
       if (mode === 'register') {
-        await accountApi.register({
+        const created = await accountApi.register({
           ...credentials,
           leetcodeHandle: String(data.get('leetcodeHandle') ?? '').trim(),
           displayName: String(data.get('displayName') ?? ''),
         })
+        pendingVerification.current = created.id
+        try {
+          sessionStorage.setItem('leetgrind:verify:' + created.id, 'pending')
+        } catch {
+          // Verification guidance can still use the in-page registration result.
+        }
         setMode('signin')
-        setNotice({ text: 'Your account is ready. Sign in to continue.' })
+        setNotice({ text: 'Your account is ready. Sign in to verify your LeetCode profile.' })
       } else {
-        showProfile(await accountApi.login(credentials))
+        const signedIn = await accountApi.login(credentials)
+        const onboardingKey = 'leetgrind:verify:' + signedIn.id
+        let guide = pendingVerification.current === signedIn.id
+        try {
+          guide ||= sessionStorage.getItem(onboardingKey) === 'pending'
+          sessionStorage.removeItem(onboardingKey)
+        } catch {
+          // A blocked storage API should not interrupt signing in.
+        }
+        if (pendingVerification.current === signedIn.id) pendingVerification.current = null
+        setVerificationOnboarding(guide)
+        showProfile(signedIn)
       }
     } catch (error) {
       setNotice(errorNotice(error))
@@ -117,13 +136,16 @@ function App() {
   }
 
   const requestedLeetCode = new URLSearchParams(window.location.search).get('leetcode')?.trim().slice(0, 256) ?? ''
+  const leetCodePanel = profile && <ProfileLeetCode key={profile.id + requestedLeetCode} accountId={profile.id}
+    requestedUrl={requestedLeetCode} onboarding={verificationOnboarding} />
   const banner = notice && <p className={notice.error ? 'notice error' : 'notice'} role={notice.error ? 'alert' : 'status'}>{notice.text}</p>
 
   if (profile) return <PublicLeetCodeProvider key={profile.id} accountId={profile.id}>
-    <Workspace profile={profile} initialView={requestedLeetCode ? 'profile' : 'overview'} notice={banner} clearNotice={() => setNotice(null)}
+    <Workspace profile={profile} initialView={requestedLeetCode || verificationOnboarding ? 'profile' : 'overview'} notice={banner} clearNotice={() => setNotice(null)}
     profilePanel={<div className="profile-panel" aria-busy={busy}>
       <h1>Your profile</h1>
       <p className="intro">Your display name and handle identify you in LeetGrind.</p>
+      {verificationOnboarding && leetCodePanel}
       <form onSubmit={saveProfile}>
         <label>Display name
           <input name="displayName" value={displayName} required maxLength={80}
@@ -135,7 +157,7 @@ function App() {
         </dl>
         <button type="submit" disabled={busy}>Save profile</button>
       </form>
-      <ProfileLeetCode key={profile.id + requestedLeetCode} accountId={profile.id} requestedUrl={requestedLeetCode} />
+      {!verificationOnboarding && leetCodePanel}
     </div>}
     settingsPanel={<div className="profile-panel" aria-busy={busy}>
       <h1>Settings</h1>

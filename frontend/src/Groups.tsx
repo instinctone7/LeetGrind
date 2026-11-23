@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { ApiError, competitionApi, groupsApi, rewardsApi } from './api'
-import type { FeedItem, Group, GroupFeatured, GroupInvite, GroupMember, GroupMetrics, PublicGroup, RewardsProgress, Standings, StandingsPeriod } from './api'
+import { ApiError, groupsApi, rewardsApi } from './api'
+import type { Group, GroupFeatured, GroupInvite, GroupMember, GroupMetrics, PublicGroup, RewardsProgress, Standings, StandingsPeriod } from './api'
 import { Competition } from './Competition'
-import { GroupActivity, GroupQuota, GroupRank, OvertakeCalculator, SquadronRoster } from './GroupDeck'
+import { GroupQuota, GroupRank, OvertakeCalculator, SquadronRoster } from './GroupDeck'
 import { Avatar, Icon } from './Icons'
 import { LeaderboardStandings } from './LeaderboardStandings'
 import { GroupDirectoryCard, PublicDirectoryCard } from './GroupDirectoryCard'
@@ -467,7 +467,6 @@ export function GroupStandings({ accountId, id, groupName, onAccessLost, members
   const [page, setPage] = useState<Standings | null>(null)
   const [featured, setFeatured] = useState<GroupFeatured | null>(null)
   const [intercept, setIntercept] = useState<RewardsProgress['featured'] | null>(null)
-  const [feed, setFeed] = useState<FeedItem[] | null>(null)
   const [revision, setRevision] = useState(0)
   const [pages, setPages] = useState(1)
   const [busy, setBusy] = useState(false)
@@ -503,10 +502,7 @@ export function GroupStandings({ accountId, id, groupName, onAccessLost, members
       if (waiting) return
       waiting = true
       try {
-        const extras = squad && id ? Promise.allSettled([
-          rewardsApi.progress(accountId, 'live'),
-          competitionApi.feed(accountId, id, 'live'),
-        ]) : null
+        const extras = squad && id ? rewardsApi.progress(accountId, 'live').catch(() => null) : null
         const [result, activity] = await Promise.all([
           loadStandings(),
           id ? rewardsApi.groupFeatured(accountId, id, 'live').catch(() => null) : null,
@@ -517,10 +513,9 @@ export function GroupStandings({ accountId, id, groupName, onAccessLost, members
           setError('')
         }
         if (extras) {
-          const [personal, group] = await extras
+          const personal = await extras
           if (keep) {
-            setIntercept(personal.status === 'fulfilled' && personal.value.featured.title === activity?.title ? personal.value.featured : null)
-            setFeed(group.status === 'fulfilled' ? group.value : null)
+            setIntercept(personal?.featured.title === activity?.title ? personal?.featured ?? null : null)
           }
         }
       } catch (failure) {
@@ -547,7 +542,6 @@ export function GroupStandings({ accountId, id, groupName, onAccessLost, members
     setPage(null)
     setFeatured(null)
     setIntercept(null)
-    setFeed(null)
     setPages(1)
     setPeriod(newPeriod)
     setDate(newDate)
@@ -608,7 +602,6 @@ export function GroupStandings({ accountId, id, groupName, onAccessLost, members
           <aside className="squad-rail" aria-label="Squad progress">
             <GroupQuota featured={featured} />
             <OvertakeCalculator leader={leader} own={own} />
-            <GroupActivity feed={feed} own={own} leader={leader} />
           </aside>
         </div>
       </>}

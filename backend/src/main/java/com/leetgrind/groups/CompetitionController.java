@@ -30,12 +30,10 @@ class CompetitionController {
     private static final String FIRST = "9223372036854775807";
     private final ChallengeService challenges;
     private final GroupActivity activity;
-    private final GroupStandings standings;
 
-    CompetitionController(ChallengeService challenges, GroupActivity activity, GroupStandings standings) {
+    CompetitionController(ChallengeService challenges, GroupActivity activity) {
         this.challenges = challenges;
         this.activity = activity;
-        this.standings = standings;
     }
 
     @GetMapping("/groups/{groupId}/challenges")
@@ -48,23 +46,48 @@ class CompetitionController {
     @ResponseStatus(HttpStatus.CREATED)
     ChallengeService.View create(@AuthenticationPrincipal Jwt jwt, @PathVariable long groupId,
                                  @Valid @RequestBody ChallengeRequest request) {
+        if (request.kind() != ChallengeService.Kind.DUEL || !"demo".equals(request.mode())) {
+            throw new Failure(HttpStatus.NOT_FOUND, "challenge_not_found", "This competition is unavailable.");
+        }
         return challenges.create(groupId, actor(jwt), request.settings());
     }
 
     @GetMapping("/groups/{groupId}/challenges/{challengeId}")
     ChallengeService.View challenge(@AuthenticationPrincipal Jwt jwt, @PathVariable long groupId, @PathVariable long challengeId) {
-        return challenges.detail(groupId, actor(jwt), challengeId);
+        return requireDuel(challenges.detail(groupId, actor(jwt), challengeId));
+    }
+
+    @PostMapping("/groups/{groupId}/duels")
+    @ResponseStatus(HttpStatus.CREATED)
+    ChallengeService.View duel(@AuthenticationPrincipal Jwt jwt, @PathVariable long groupId,
+                               @Valid @RequestBody DuelRequest request) {
+        long account = actor(jwt);
+        long opponent;
+        try {
+            opponent = Long.parseLong(request.inviteeId());
+        } catch (NumberFormatException invalid) {
+            throw new Failure(HttpStatus.BAD_REQUEST, "invalid_challenge", "Choose a valid group member.");
+        }
+        var problem = challenges.resolveDuelProblem(groupId, account, request.problemUrl());
+        return challenges.createDuel(groupId, account, opponent, problem, request.durationMinutes(), request.stakeXp());
+    }
+
+    @GetMapping("/groups/{groupId}/duels/summary")
+    ChallengeService.DuelSummary duelSummary(@AuthenticationPrincipal Jwt jwt, @PathVariable long groupId) {
+        return challenges.duelSummary(groupId, actor(jwt));
     }
 
     @PostMapping("/groups/{groupId}/challenges/{challengeId}/enrollment")
     ChallengeService.View enroll(@AuthenticationPrincipal Jwt jwt, @PathVariable long groupId, @PathVariable long challengeId) {
+        requireDuel(challenges.detail(groupId, actor(jwt), challengeId));
         return challenges.enroll(groupId, actor(jwt), challengeId);
     }
 
-    @GetMapping("/groups/{groupId}/activity")
-    List<GroupActivity.FeedItem> activity(@AuthenticationPrincipal Jwt jwt, @PathVariable long groupId,
-            @RequestParam(defaultValue = "live") String mode) {
-        return activity.feed(groupId, actor(jwt), standings.provider(mode));
+    private static ChallengeService.View requireDuel(ChallengeService.View view) {
+        if (view.challenge().kind() != ChallengeService.Kind.DUEL) {
+            throw new Failure(HttpStatus.NOT_FOUND, "challenge_not_found", "This competition is unavailable.");
+        }
+        return view;
     }
 
     @GetMapping("/me/notifications")
@@ -81,6 +104,11 @@ class CompetitionController {
     private static long actor(Jwt jwt) {
         return Long.parseLong(jwt.getSubject());
     }
+
+    record DuelRequest(@NotBlank @Pattern(regexp = "[1-9][0-9]{0,18}") String inviteeId,
+                       @NotBlank @Size(max = 300) String problemUrl,
+                       @NotNull @Min(10) @Max(120) Integer durationMinutes,
+                       @NotNull @Min(5) @Max(100) Integer stakeXp) {}
 
     record ChallengeRequest(@NotBlank @Size(max = 80) String title, @NotNull ChallengeService.Kind kind,
                             @NotNull ChallengeService.Rule rule, @Pattern(regexp = "live|demo") String mode,
