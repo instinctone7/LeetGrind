@@ -49,10 +49,18 @@ export function PublicLeetCodeProvider({ accountId, children }: { accountId: str
         setError('')
         return
       }
+      let syncError = ''
       if (link.syncAvailable) {
         lastReturnSync.current = Date.now()
-        await practiceApi.sync(accountId)
+        try {
+          const synced = await practiceApi.sync(accountId)
+          if (request !== revision.current) return
+          setLink(synced)
+        } catch (failure) {
+          syncError = failure instanceof ApiError ? failure.message : 'LeetCode activity could not be synced.'
+        }
       }
+      if (request !== revision.current) return
       const next = await practiceApi.preview(accountId)
       if (request === revision.current) {
         const previous = latestSnapshot.current
@@ -68,7 +76,7 @@ export function PublicLeetCodeProvider({ accountId, children }: { accountId: str
         }
         latestSnapshot.current = next
         setSnapshot(next)
-        setError('')
+        setError(syncError)
       }
     } catch (failure) {
       if (request === revision.current) {

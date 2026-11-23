@@ -12,6 +12,10 @@ async function openAccountPage(page: Page, name: 'Profile' | 'Settings') {
 
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/v1/me/leetcode-link/preview*', route => route.fulfill({ json: null }))
+  await page.route('**/api/v1/me/leetcode-link/sync', async route => {
+    const response = await route.fetch({ url: route.request().url().replace(/\/sync$/, ''), method: 'GET' })
+    await route.fulfill({ response })
+  })
 })
 
 test('register, sign in, update a profile, refresh, and sign out', async ({ page }) => {
@@ -36,8 +40,6 @@ test('register, sign in, update a profile, refresh, and sign out', async ({ page
 
   await page.getByLabel('Password').fill(password)
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Verify your LeetCode profile' })).toBeVisible()
-  await expect(page.getByText(/Copy your verification code lg-/)).toBeVisible()
   await expect(page.getByRole('banner').getByRole('button', { name: 'Profile', exact: true })).toHaveCount(0)
   const accountMenu = page.getByRole('button', { name: 'Account menu' })
   await accountMenu.focus()
@@ -51,6 +53,7 @@ test('register, sign in, update a profile, refresh, and sign out', async ({ page
   await expect(page.getByRole('heading', { name: 'Your profile' })).toBeVisible()
   await expect(page.getByText(/@practice_[a-z]+_[a-f0-9]{16}/)).toBeVisible()
   await expect(page.getByLabel('LeetCode handle or profile URL')).toHaveValue(handle)
+  await expect(page.getByRole('button', { name: 'Verify profile' })).toHaveCount(0)
 
   await page.getByLabel('Display name').fill('Group Learner')
   await page.getByRole('button', { name: 'Save profile' }).click()

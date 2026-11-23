@@ -115,7 +115,6 @@ export type LinkStatus = {
   demoAvailable: boolean
   previewEnabled: boolean
   syncAvailable: boolean
-  ownershipCode: string | null
   providerPaused: boolean
   syncState: 'QUEUED' | 'RUNNING' | 'RETRY' | 'PAUSED' | 'IDLE' | null
   failureCode: string | null
@@ -177,8 +176,6 @@ export const practiceApi = {
     protectedRequest<void>('/me/leetcode-link', { method: 'DELETE' }, accountId),
   sync: (accountId: string) =>
     protectedRequest<LinkStatus>('/me/leetcode-link/sync', { method: 'POST' }, accountId),
-  verify: (accountId: string) =>
-    protectedRequest<LinkStatus>('/me/leetcode-link/verify', { method: 'POST' }, accountId),
   progress: (accountId: string) => protectedRequest<Progress>('/me/progress', {}, accountId),
   checkIn: (accountId: string) =>
     protectedRequest<{ nextCheckInAt: string }>('/me/check-in', { method: 'POST' }, accountId),

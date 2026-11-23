@@ -3,7 +3,6 @@ package com.leetgrind.integration;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
-import com.leetgrind.platform.ApiErrors.Failure;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -56,17 +55,9 @@ class LinkController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     LinkService.Status requestSync(@AuthenticationPrincipal Jwt jwt) {
         long account = accountId(jwt);
-        return links.publicSyncTarget(account, false)
+        return links.publicSyncTarget(account)
                 .map(target -> links.recordPublicSync(account, target, previews.read(account, target.handle())))
                 .orElseGet(() -> links.requestSync(account));
-    }
-
-    @PostMapping("/verify")
-    LinkService.Status verify(@AuthenticationPrincipal Jwt jwt) {
-        long account = accountId(jwt);
-        var target = links.publicSyncTarget(account, true).orElseThrow(() ->
-                new Failure(HttpStatus.CONFLICT, "verification_unavailable", "Save a public LeetCode profile before verifying it."));
-        return links.recordPublicSync(account, target, previews.read(account, target.handle()));
     }
 
     private static long accountId(Jwt jwt) {

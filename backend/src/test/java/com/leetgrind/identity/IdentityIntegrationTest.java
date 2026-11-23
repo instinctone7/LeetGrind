@@ -66,7 +66,7 @@ class IdentityIntegrationTest {
     }
 
     @Test
-    void savingTheFixtureHandleWithDemoDisabledDoesNotVerifyOrQueue() throws Exception {
+    void savingTheFixtureHandleWithDemoDisabledDoesNotQueueDemoSync() throws Exception {
         Fixture fixture = fixture();
         var registration = register(fixture.email(), fixture.leetcodeHandle());
         assertThat(registration.statusCode()).isEqualTo(201);
@@ -74,9 +74,8 @@ class IdentityIntegrationTest {
         String access = token(login(fixture.email()));
         var link = send("PUT", "/api/v1/me/leetcode-link", Map.of("handle", "fixture-" + id), access, null, false);
         assertThat(link.statusCode()).isEqualTo(200);
-        assertThat(json.readTree(link.body()).path("state").asText()).isEqualTo("PENDING");
+        assertThat(json.readTree(link.body()).path("state").asText()).isEqualTo("VERIFIED");
         assertThat(json.readTree(link.body()).path("demoAvailable").asBoolean()).isFalse();
-        assertError(send("POST", "/api/v1/me/leetcode-link/sync", null, access, null, false), 409, "link_unverified");
         assertThat(database.queryForObject("""
                 SELECT COUNT(*) FROM sync_jobs j JOIN leetcode_links l ON l.id = j.link_id WHERE l.account_id = ?
                 """, Integer.class, Long.parseLong(id))).isZero();
@@ -142,7 +141,8 @@ class IdentityIntegrationTest {
                 .isEqualTo(1);
         String winningHandle = database.queryForObject("select handle from accounts where email = ?",
                 String.class, fixture.email());
-        var sameName = register(fixture().email(), fixture.leetcodeHandle());
+        var another = fixture();
+        var sameName = register(another.email(), another.leetcodeHandle());
         assertThat(sameName.statusCode()).isEqualTo(201);
         assertThat(json.readTree(sameName.body()).path("handle").asText()).isNotEqualTo(winningHandle);
         assertThat(database.queryForObject("""

@@ -22,8 +22,8 @@ function date(value: string | null) {
   return value ? dateFormat.format(new Date(value)) + ' UTC' : '—'
 }
 
-export function Practice({ accountId, onProfile }: { accountId: string; onProfile: () => void }) {
-  const { snapshot, error: previewError, refresh, link } = usePublicLeetCode()
+export function Practice({ accountId }: { accountId: string }) {
+  const { snapshot, error: previewError, refresh } = usePublicLeetCode()
   const [refreshingPreview, setRefreshingPreview] = useState(false)
   const [progress, setProgress] = useState<Progress | null>(null)
   const [entries, setEntries] = useState<XpEntry[]>([])
@@ -128,11 +128,7 @@ export function Practice({ accountId, onProfile }: { accountId: string; onProfil
         <section className="practice-card" aria-labelledby="xp-heading">
           <h2 id="xp-heading">XP history</h2>
           <p>{view ? view.totalXp : '—'} XP · {progress.solvedCount} credited solves</p>
-          <small>Practice XP includes daily login rewards and verified solve rewards.</small>
-          {link?.state === 'PENDING' && link.ownershipCode && <div className="practice-actions">
-            <p className="muted">Verify your saved LeetCode profile to earn solve XP.</p>
-            <button type="button" className="text-button" onClick={onProfile}>Open profile verification</button>
-          </div>}
+          <small>Practice XP includes daily login rewards and accepted LeetCode solves.</small>
           {entries.length ? (
             <ul className="xp-list">
               {entries.map(entry => (

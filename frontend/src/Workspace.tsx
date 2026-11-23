@@ -233,7 +233,7 @@ export function Workspace({ profile, profilePanel, settingsPanel, notice, clearN
           <div className={`workspace-page page-${view}${view === 'quests' || view === 'achievements' || view === 'leaderboard' ? '' : ' deck-panel'}`}>
             {view === 'groups' && <Groups accountId={profile.id} selectedId={groupId} challengeId={groupChallengeId}
               onSelect={chooseGroup} onPractice={() => navigate('practice')} />}
-            {view === 'practice' && <Practice accountId={profile.id} onProfile={() => navigate('profile')} />}
+            {view === 'practice' && <Practice accountId={profile.id} />}
             {view === 'analytics' && <Analytics accountId={profile.id} />}
             {view === 'notifications' && <Inbox accountId={profile.id} onOpen={(id, challengeId) => showGroup(id, challengeId)} />}
             {view === 'profile' && profilePanel}

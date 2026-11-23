@@ -7,7 +7,6 @@ import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -21,7 +20,6 @@ import com.leetgrind.platform.Utc;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -98,10 +96,25 @@ public class LinkService {
             disconnect(previous, now);
             previous = null;
         }
-        long id = previous == null ? insertPending(accountId, handle) : previous.id();
-        long version = previous == null ? 1 : previous.version();
+        String providerName = proof == null ? LIVE : FixtureActivityProvider.PROVIDER;
+        String profileId = proof == null ? handle : proof;
+        bindIdentity(accountId, providerName, profileId);
+        if (previous == null) {
+            jdbc.sql("""
+                    INSERT INTO leetcode_links (account_id, handle, state, provider, provider_account_id, verified_at, activated_at)
+                    VALUES (?, ?, 'VERIFIED', ?, ?, ?, ?)
+                    """).params(accountId, handle, providerName, profileId, Utc.sql(now), Utc.sql(now)).update();
+        } else {
+            jdbc.sql("""
+                    UPDATE leetcode_links SET state = 'VERIFIED', provider = ?, provider_account_id = ?,
+                        verified_at = ?, activated_at = ? WHERE id = ?
+                    """).params(providerName, profileId, Utc.sql(now), Utc.sql(now), previous.id()).update();
+        }
         if (proof != null) {
-            verifyFixture(accountId, id, version, proof, now);
+            Link link = activeLink(accountId).orElseThrow();
+            jdbc.sql("""
+                    INSERT INTO sync_jobs (link_id, link_version, state, next_run_at) VALUES (?, ?, 'QUEUED', ?)
+                    """).params(link.id(), link.version(), Utc.sql(now)).update();
         }
         return readStatus(accountId);
     }
@@ -134,34 +147,27 @@ public class LinkService {
     }
 
     @Transactional(readOnly = true)
-    public Optional<PublicTarget> publicSyncTarget(long accountId, boolean verification) {
+    public Optional<PublicTarget> publicSyncTarget(long accountId) {
         if (!previewEnabled) return Optional.empty();
-        return findLink(accountId, false).filter(link -> link.ownershipCode() != null
-                && (verification ? !link.isVerified() : link.isVerified() && LIVE.equals(link.provider())))
-                .map(link -> new PublicTarget(link.id(), link.version(), link.handle(), verification));
+        return findLink(accountId, false).filter(Link::isPublic)
+                .map(link -> new PublicTarget(link.id(), link.version(), link.handle()));
     }
 
     @Transactional
     public Status recordPublicSync(long accountId, PublicTarget target, ProfilePreview.Snapshot preview) {
         lockAccount(accountId);
         Link link = activeLink(accountId).filter(current -> current.id() == target.id() && current.version() == target.version()
-                && current.handle().equals(target.handle()) && current.ownershipCode() != null
-                && (target.verification() ? !current.isVerified() : current.isVerified() && LIVE.equals(current.provider())))
+                && current.handle().equals(target.handle()) && current.isPublic())
                 .orElseThrow(() -> new Failure(HttpStatus.CONFLICT, "link_changed", "The saved LeetCode profile changed. Try again."));
-        if (preview == null || !link.handle().equalsIgnoreCase(preview.username()) || preview.realName() == null
-                || !Arrays.asList(preview.realName().strip().split("\\s+")).contains(link.ownershipCode())) {
-            throw new Failure(HttpStatus.CONFLICT, "profile_proof_missing",
-                    "Add the verification code to your public LeetCode Real Name, then try again.");
+        if (preview == null || !link.handle().equalsIgnoreCase(preview.username())) {
+            throw new Failure(HttpStatus.BAD_GATEWAY, "profile_preview_unavailable",
+                    "Could not fetch activity for the saved LeetCode profile.");
         }
         if (jdbc.sql("SELECT paused FROM sync_control WHERE id = 1").query(Boolean.class).single()) {
             throw new Failure(HttpStatus.CONFLICT, "sync_paused", "Synchronization is paused for maintenance.");
         }
 
         Instant now = Utc.now(clock);
-        boolean verifying = !link.isVerified();
-        if (verifying) {
-            bindIdentity(accountId, link.id(), LIVE, link.handle(), now);
-        }
         var windows = activeDuelWindows(accountId, now);
         boolean duelRecorded = false;
         var orderedSolves = preview.recentSubmissions().stream()
@@ -177,7 +183,7 @@ public class LinkService {
             }
         }
         if (latest != null && !latestRecorded) {
-            recordLatest(accountId, link, latest, now, verifying || duelRecorded, null);
+            recordLatest(accountId, link, latest, now, duelRecorded, null);
         }
         jdbc.sql("UPDATE leetcode_links SET last_success_at = ? WHERE id = ?")
                 .params(Utc.sql(now), link.id()).update();
@@ -216,7 +222,7 @@ public class LinkService {
         String submissionId = UUID.nameUUIDFromBytes((slug + ":" + latest.timestamp()).getBytes(StandardCharsets.UTF_8)).toString();
         var submission = new ActivityProvider.Submission(submissionId, new Problem(slug, slug, latest.title().strip(), difficulty),
                 occurred, ActivityProvider.Outcome.ACCEPTED);
-        // The newest public solve may precede verification. Its source time determines leaderboard eligibility.
+        // A solve may precede linking. Its source time determines leaderboard eligibility.
         if (!ingestion.ingest(new SubmissionIngestion.Source(accountId, link.id(), LIVE, link.handle(), Instant.EPOCH, now),
                 List.of(submission), now)) {
             throw new Failure(HttpStatus.BAD_GATEWAY, "solve_evidence_changed", "LeetCode returned conflicting submission data.");
@@ -226,8 +232,11 @@ public class LinkService {
     @Transactional
     public Status requestSync(long accountId) {
         lockAccount(accountId);
-        Link link = activeLink(accountId).filter(Link::isVerified).orElseThrow(() ->
-                new Failure(HttpStatus.CONFLICT, "link_unverified", "Verify a linked profile before requesting sync."));
+        Link link = activeLink(accountId).orElseThrow(() ->
+                new Failure(HttpStatus.CONFLICT, "sync_unavailable", "Save a LeetCode profile before syncing."));
+        if (!link.isVerified()) {
+            throw new Failure(HttpStatus.CONFLICT, "provider_conflict", "That LeetCode username is already linked.");
+        }
         if (!fixturesEnabled || !FixtureActivityProvider.PROVIDER.equals(link.provider())) {
             throw new Failure(HttpStatus.CONFLICT, "sync_unavailable", "Synchronization is unavailable for this profile.");
         }
@@ -263,7 +272,7 @@ public class LinkService {
 
     private Status readStatus(long accountId) {
         return jdbc.sql("""
-                SELECT l.handle, l.state AS link_state, l.provider, l.ownership_code, l.activated_at, l.coverage_uncertain, l.last_success_at,
+                SELECT l.handle, l.state AS link_state, l.provider, l.activated_at, l.coverage_uncertain, l.last_success_at,
                        j.state AS sync_state, j.last_attempt_at, j.failure_code, j.next_run_at, j.manual_available_at, c.paused
                 FROM leetcode_links l LEFT JOIN sync_jobs j
                    ON j.link_id = l.id AND j.link_version = l.version
@@ -274,15 +283,13 @@ public class LinkService {
             String linkState = row.getString("link_state");
             boolean demo = FixtureActivityProvider.PROVIDER.equals(row.getString("provider"));
             boolean paused = row.getBoolean("paused");
-            String proof = previewEnabled && !demo && !"DISCONNECTED".equals(linkState) ? row.getString("ownership_code") : null;
             return new Status(linkState, row.getString("handle"), demo, fixturesEnabled, previewEnabled,
-                    "VERIFIED".equals(linkState) && !paused && (proof != null || fixturesEnabled && demo && !"PAUSED".equals(syncState)),
-                    proof,
+                    "VERIFIED".equals(linkState) && !paused && (demo ? fixturesEnabled && !"PAUSED".equals(syncState) : previewEnabled),
                     paused, syncState, row.getString("failure_code"), row.getBoolean("coverage_uncertain") || row.getString("failure_code") != null,
                     time(row, "activated_at"), time(row, "last_attempt_at"), time(row, "last_success_at"),
                     "PAUSED".equals(syncState) || "RUNNING".equals(syncState) ? null : time(row, "next_run_at"),
                     time(row, "manual_available_at"));
-        }).optional().orElse(new Status("NONE", null, false, fixturesEnabled, previewEnabled, false, null, false,
+        }).optional().orElse(new Status("NONE", null, false, fixturesEnabled, previewEnabled, false, false,
                 null, null, true, null, null, null, null, null));
     }
 
@@ -297,21 +304,10 @@ public class LinkService {
     }
 
     private Optional<Link> findLink(long accountId, boolean lock) {
-        return jdbc.sql("SELECT id, handle, version, state, provider, ownership_code FROM leetcode_links WHERE active_account_id = ?"
+        return jdbc.sql("SELECT id, handle, version, state, provider FROM leetcode_links WHERE active_account_id = ?"
                 + (lock ? " FOR UPDATE" : ""))
                 .param(accountId).query((row, index) -> new Link(row.getLong("id"), row.getString("handle"),
-                        row.getLong("version"), row.getString("state"), row.getString("provider"),
-                        row.getString("ownership_code"))).optional();
-    }
-
-    private long insertPending(long accountId, String handle) {
-        var key = new GeneratedKeyHolder();
-        jdbc.sql("""
-                INSERT INTO leetcode_links (account_id, handle, state, ownership_code)
-                VALUES (?, ?, 'PENDING', CONCAT('lg-', LOWER(HEX(RANDOM_BYTES(10)))))
-                """)
-                .params(accountId, handle).update(key, "id");
-        return key.getKey().longValue();
+                        row.getLong("version"), row.getString("state"), row.getString("provider"))).optional();
     }
 
     private void disconnect(Link current, Instant now) {
@@ -325,14 +321,7 @@ public class LinkService {
                 """).params(current.id(), current.version()).update();
     }
 
-    private void verifyFixture(long accountId, long linkId, long version, String profileId, Instant now) {
-        bindIdentity(accountId, linkId, FixtureActivityProvider.PROVIDER, profileId, now);
-        jdbc.sql("""
-                INSERT INTO sync_jobs (link_id, link_version, state, next_run_at) VALUES (?, ?, 'QUEUED', ?)
-                """).params(linkId, version, Utc.sql(now)).update();
-    }
-
-    private void bindIdentity(long accountId, long linkId, String providerName, String profileId, Instant now) {
+    private void bindIdentity(long accountId, String providerName, String profileId) {
         jdbc.sql("""
                 INSERT INTO provider_identities (provider, provider_account_id, account_id) VALUES (?, ?, ?)
                 ON DUPLICATE KEY UPDATE account_id = provider_identities.account_id
@@ -342,23 +331,23 @@ public class LinkService {
         if (owner != accountId) {
             throw new Failure(HttpStatus.CONFLICT, "provider_conflict", "That provider profile cannot be linked.");
         }
-        jdbc.sql("""
-                UPDATE leetcode_links SET state = 'VERIFIED', provider = ?, provider_account_id = ?,
-                    verified_at = ?, activated_at = ? WHERE id = ?
-                """).params(providerName, profileId, Utc.sql(now), Utc.sql(now), linkId).update();
     }
 
     static Instant time(ResultSet row, String field) throws SQLException {
         return Utc.instant(row.getObject(field, LocalDateTime.class));
     }
 
-    private record Link(long id, String handle, long version, String state, String provider, String ownershipCode) {
+    private record Link(long id, String handle, long version, String state, String provider) {
         boolean isVerified() {
             return "VERIFIED".equals(state);
         }
+
+        boolean isPublic() {
+            return isVerified() && LIVE.equals(provider);
+        }
     }
 
-    record PublicTarget(long id, long version, String handle, boolean verification) {}
+    record PublicTarget(long id, long version, String handle) {}
 
     private record DuelWindow(String slug, Difficulty difficulty, Instant start, Instant end) {
         boolean includes(ProfilePreview.Submission solve) {
@@ -367,7 +356,7 @@ public class LinkService {
         }
     }
 
-    record Status(String state, String handle, boolean fixture, boolean demoAvailable, boolean previewEnabled, boolean syncAvailable, String ownershipCode,
+    record Status(String state, String handle, boolean fixture, boolean demoAvailable, boolean previewEnabled, boolean syncAvailable,
                   boolean providerPaused, String syncState, String failureCode, boolean coverageUncertain, Instant activatedAt,
                   Instant lastAttemptAt, Instant lastSuccessfulSyncAt, Instant nextSyncAt, Instant manualSyncAvailableAt) {}
 

@@ -27,7 +27,8 @@ function SyncStatus({ link, onProfile }: { link?: LinkStatus; onProfile: () => v
   let label = 'Connect LeetCode'
   if (link?.providerPaused || link?.syncState === 'PAUSED') label = 'Sync paused'
   else if (link?.syncState === 'QUEUED' || link?.syncState === 'RUNNING') label = 'Sync in progress'
-  else if (link?.state === 'PENDING') label = link.previewEnabled ? 'LeetCode public preview' : 'LeetCode handle saved'
+  else if (link?.state === 'PENDING') label = 'LeetCode username already linked'
+  else if (link?.state === 'VERIFIED' && !link.previewEnabled) label = 'LeetCode profile saved'
   else if (link?.state === 'VERIFIED' && (link.failureCode || (link.lastSuccessfulSyncAt && link.coverageUncertain))) label = 'Coverage incomplete'
   else if (link?.state === 'VERIFIED' && link.lastSuccessfulSyncAt) label = 'LeetCode synced'
   else if (link?.state === 'VERIFIED') label = 'Ready to sync'
@@ -297,7 +298,6 @@ export function Dashboard({ profile, group, onLeaderboard, onPractice, onProfile
         }}>{refreshingProfile ? 'Refreshing…' : 'Refresh public activity'}</button>
       </header>
       {profileError && <p role="alert">{profileError}</p>}
-      {personal.link.state === 'PENDING' && <p className="muted">Solve XP requires verified submissions.</p>}
       {snapshot && <PublicLeetCodeStats snapshot={snapshot} />}
     </section>}
 

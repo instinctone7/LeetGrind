@@ -136,8 +136,7 @@ class AnalyticsIntegrationTest {
         assertThat(response.path("summary").path("solved").asLong()).isEqualTo(1);
         assertThat(response.path("summary").path("topics").get(0).path("topic").asText()).isEqualTo("Array");
         var live = read(learner, "");
-        assertThat(live.path("coverage").path("state").asText()).isEqualTo("UNAVAILABLE");
-        assertThat(live.path("coverage").path("trackedSince").isNull()).isTrue();
+        assertThat(live.path("coverage").path("state").asText()).isEqualTo("DISCONNECTED");
         assertThat(live.path("summary").path("solved").asLong()).isZero();
 
         assertThat(call("GET", "/me/analytics", null, null).statusCode()).isEqualTo(401);
@@ -185,7 +184,7 @@ class AnalyticsIntegrationTest {
         String handle = "analytics-" + account + "-" + provider.toLowerCase(java.util.Locale.ROOT);
         jdbc.sql("INSERT INTO provider_identities (provider, provider_account_id, account_id) VALUES (?, ?, ?)")
                 .params(provider, handle, account).update();
-        jdbc.sql("UPDATE leetcode_links SET state = 'DISCONNECTED' WHERE account_id = ? AND state = 'PENDING'")
+        jdbc.sql("UPDATE leetcode_links SET state = 'DISCONNECTED' WHERE account_id = ? AND active_account_id IS NOT NULL")
                 .param(account).update();
         long link = insert("""
                 INSERT INTO leetcode_links (account_id, handle, state, provider, provider_account_id, verified_at, activated_at)

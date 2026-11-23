@@ -182,7 +182,7 @@ paths:
     put:
       operationId: putLeetcodeLink
       summary: Save or replace a provider handle using a handle or profile URL
-      description: Live handles stay pending. Optional local mode can verify an account-scoped synthetic profile.
+      description: Saves a LeetCode username or profile URL. Each public username links to one LeetGrind account.
       security:
         - AccessToken: []
       requestBody:
@@ -225,7 +225,7 @@ paths:
     get:
       operationId: previewLeetcodeProfile
       summary: Preview public LeetCode data for a supplied or saved handle
-      description: Returns a read-only snapshot. Preview data never verifies ownership or awards XP.
+      description: Returns a read-only snapshot. XP is credited by the sync endpoint.
       security:
         - AccessToken: []
       parameters:
@@ -284,23 +284,6 @@ paths:
         '401':
           $ref: '#/components/responses/ApiError'
         '404':
-          $ref: '#/components/responses/ApiError'
-        '409':
-          $ref: '#/components/responses/ApiError'
-        '429':
-          $ref: '#/components/responses/ApiError'
-        '502':
-          $ref: '#/components/responses/ApiError'
-  /me/leetcode-link/verify:
-    post:
-      operationId: verifyLeetcodeLink
-      summary: Verify control of the saved public LeetCode profile
-      security:
-        - AccessToken: []
-      responses:
-        '200':
-          $ref: '#/components/responses/LinkStatus'
-        '401':
           $ref: '#/components/responses/ApiError'
         '409':
           $ref: '#/components/responses/ApiError'
@@ -2082,7 +2065,7 @@ components:
           - 'null'
     LinkStatus:
       type: object
-      required: [state, handle, fixture, demoAvailable, previewEnabled, syncAvailable, ownershipCode, providerPaused, syncState, failureCode, coverageUncertain, activatedAt, lastAttemptAt, lastSuccessfulSyncAt, nextSyncAt, manualSyncAvailableAt]
+      required: [state, handle, fixture, demoAvailable, previewEnabled, syncAvailable, providerPaused, syncState, failureCode, coverageUncertain, activatedAt, lastAttemptAt, lastSuccessfulSyncAt, nextSyncAt, manualSyncAvailableAt]
       properties:
         state:
           type: string
@@ -2097,9 +2080,6 @@ components:
           type: boolean
         syncAvailable:
           type: boolean
-        ownershipCode:
-          type: [string, 'null']
-          description: Code to keep as a separate word in the public LeetCode Real Name while solve sync is enabled.
         providerPaused:
           type: boolean
         syncState:
@@ -2226,7 +2206,7 @@ components:
       properties:
         code:
           type: string
-          enum: [invalid_request, invalid_password, invalid_credentials, invalid_session, unauthenticated, invalid_origin, forbidden, account_conflict, rate_limited, unsupported_media_type, method_not_allowed, not_found, server_error, invalid_handle, invalid_pagination, provider_conflict, link_unverified, sync_unavailable, sync_paused, sync_cooldown, group_not_found, group_owner_required, owner_must_transfer, invalid_new_owner, invite_unavailable, invite_rate_limited, invalid_standings, invalid_week, incorrect_password, owned_groups, signup_unavailable, invalid_rewards_mode, invalid_month, invalid_challenge, challenge_not_found, enrollment_closed, notification_not_found, invalid_analytics_mode, invalid_analytics_period, profile_preview_unavailable, profile_preview_requires_handle, profile_preview_not_found]
+          enum: [invalid_request, invalid_password, invalid_credentials, invalid_session, unauthenticated, invalid_origin, forbidden, account_conflict, rate_limited, unsupported_media_type, method_not_allowed, not_found, server_error, invalid_handle, invalid_pagination, provider_conflict, sync_unavailable, sync_paused, sync_cooldown, group_not_found, group_owner_required, owner_must_transfer, invalid_new_owner, invite_unavailable, invite_rate_limited, invalid_standings, invalid_week, incorrect_password, owned_groups, signup_unavailable, invalid_rewards_mode, invalid_month, invalid_challenge, challenge_not_found, enrollment_closed, notification_not_found, invalid_analytics_mode, invalid_analytics_period, profile_preview_unavailable, profile_preview_requires_handle, profile_preview_not_found]
         message:
           type: string
         correlationId:

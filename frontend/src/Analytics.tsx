@@ -8,7 +8,7 @@ type Selection = { period: AnalyticsPeriod; start: string }
 const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' })
 const number = new Intl.NumberFormat()
 const coverageText: Record<AnalyticsView['coverage']['state'], string> = {
-  UNAVAILABLE: 'Live LeetCode sync is awaiting provider access and ownership verification.',
+  UNAVAILABLE: 'Live LeetCode activity is unavailable. Check your saved profile.',
   NO_LINK: 'Connect a LeetCode profile to see public activity.',
   AWAITING_SYNC: 'The profile is awaiting its first successful sync.',
   PARTIAL: 'Coverage is incomplete. Recent practice may be missing from the recorded history.',

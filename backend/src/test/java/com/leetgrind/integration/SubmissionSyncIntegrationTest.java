@@ -112,7 +112,8 @@ class SubmissionSyncIntegrationTest {
         assertThat(invalid.statusCode()).isEqualTo(400);
         assertThat(body(invalid).path("code").asText()).isEqualTo("invalid_handle");
 
-        form.put("leetcodeHandle", "https://leetcode.com/u/Example-User/");
+        String handle = "example-" + UUID.randomUUID();
+        form.put("leetcodeHandle", "https://leetcode.com/u/" + handle.toUpperCase(java.util.Locale.ROOT) + "/");
         var registered = call("POST", "/auth/register", form, null);
         assertThat(registered.statusCode()).isEqualTo(201);
         accounts.add(body(registered).path("id").asLong());
@@ -120,21 +121,24 @@ class SubmissionSyncIntegrationTest {
         assertThat(login.statusCode()).isEqualTo(200);
         var link = call("GET", "/me/leetcode-link", null, body(login).path("accessToken").asText());
         assertThat(link.statusCode()).isEqualTo(200);
-        assertThat(body(link).path("handle").asText()).isEqualTo("example-user");
-        assertThat(body(link).path("state").asText()).isEqualTo("PENDING");
+        assertThat(body(link).path("handle").asText()).isEqualTo(handle);
+        assertThat(body(link).path("syncAvailable").asBoolean()).isTrue();
     }
 
     @Test
-    void ownerRoutesExposePendingLinkDemoStatusAndSeparateXpHistory() throws Exception {
+    void ownerRoutesExposePublicLinkDemoStatusAndSeparateXpHistory() throws Exception {
         var owner = registerAndLogin();
         var other = registerAndLogin();
         assertThat(call("GET", "/me/leetcode-link", null, null).statusCode()).isEqualTo(401);
-        assertThat(body(call("GET", "/me/leetcode-link", null, owner.token())).path("state").asText()).isEqualTo("PENDING");
-        var pending = call("PUT", "/me/leetcode-link", Map.of("handle", "  Sample-Handle  "), owner.token());
-        assertThat(pending.statusCode()).isEqualTo(200);
-        assertThat(body(pending).path("handle").asText()).isEqualTo("sample-handle");
-        assertThat(body(pending).path("state").asText()).isEqualTo("PENDING");
-        assertThat(call("POST", "/me/leetcode-link/sync", null, owner.token()).statusCode()).isEqualTo(409);
+        assertThat(body(call("GET", "/me/leetcode-link", null, owner.token())).path("syncAvailable").asBoolean()).isTrue();
+        String handle = "sample-" + owner.id();
+        var saved = call("PUT", "/me/leetcode-link", Map.of("handle", "  Sample-" + owner.id() + "  "), owner.token());
+        assertThat(saved.statusCode()).isEqualTo(200);
+        assertThat(body(saved).path("handle").asText()).isEqualTo(handle);
+        assertThat(body(saved).path("syncAvailable").asBoolean()).isTrue();
+        var duplicate = call("PUT", "/me/leetcode-link", Map.of("handle", handle), other.token());
+        assertThat(duplicate.statusCode()).isEqualTo(409);
+        assertThat(body(duplicate).path("code").asText()).isEqualTo("provider_conflict");
         assertThat(sync.claim()).isEmpty();
 
         var verified = call("PUT", "/me/leetcode-link", Map.of("handle", "fixture-" + owner.id()), owner.token());
@@ -152,7 +156,7 @@ class SubmissionSyncIntegrationTest {
         assertThat(ownHistory.path("items").get(0).path("amount").asInt()).isEqualTo(25);
         assertThat(body(call("GET", "/me/xp-entries", null, other.token())).path("items").get(0).path("reason").asText())
                 .isEqualTo("DAILY_LOGIN");
-        assertThat(body(call("GET", "/me/leetcode-link", null, other.token())).path("state").asText()).isEqualTo("PENDING");
+        assertThat(body(call("GET", "/me/leetcode-link", null, other.token())).path("handle").asText()).isNotEqualTo(handle);
         assertThat(call("GET", "/me/xp-entries?limit=abc", null, owner.token()).statusCode()).isEqualTo(400);
 
         clock.advance(31);
@@ -172,24 +176,21 @@ class SubmissionSyncIntegrationTest {
     }
 
     @Test
-    void ownedPublicSolveCreditsPracticeAndBothLeaderboardsOnlyOnce() throws Exception {
+    void publicSolveWithoutOwnershipCodeCreditsPracticeAndBothLeaderboardsOnlyOnce() throws Exception {
         var owner = registerAndLogin();
         var link = body(call("GET", "/me/leetcode-link", null, owner.token()));
         String handle = link.path("handle").asText();
-        String code = link.path("ownershipCode").asText();
-        assertThat(code).matches("lg-[0-9a-f]{20}");
+        assertThat(link.path("syncAvailable").asBoolean()).isTrue();
         var group = body(call("POST", "/groups", Map.of("name", "Public solve test"), owner.token()));
         String groupId = group.path("id").asText();
 
-        when(previews.read(owner.id(), handle)).thenReturn(publicSnapshot(handle, "Unrelated person", START));
-        assertThat(call("POST", "/me/leetcode-link/verify", null, owner.token()).statusCode()).isEqualTo(409);
+        when(previews.read(owner.id(), handle)).thenReturn(publicSnapshot("different-handle", null, START));
+        assertThat(call("POST", "/me/leetcode-link/sync", null, owner.token()).statusCode()).isEqualTo(502);
         assertThat(total(owner.id())).isZero();
 
         clock.advance(4);
-        when(previews.read(owner.id(), handle)).thenReturn(publicSnapshot(handle, "Learner " + code, START.plusSeconds(2)));
-        var verified = call("POST", "/me/leetcode-link/verify", null, owner.token());
-        assertThat(verified.statusCode()).isEqualTo(200);
-        assertThat(body(verified).path("state").asText()).isEqualTo("VERIFIED");
+        when(previews.read(owner.id(), handle)).thenReturn(publicSnapshot(handle, null, START.plusSeconds(2)));
+        assertThat(call("POST", "/me/leetcode-link/sync", null, owner.token()).statusCode()).isEqualTo(202);
         assertThat(total(owner.id())).isEqualTo(25);
 
         clock.advance(3);
@@ -202,9 +203,6 @@ class SubmissionSyncIntegrationTest {
         assertThat(body(call("GET", "/groups/" + groupId + "/leaderboard", null, owner.token()))
                 .path("items").get(0).path("xp").asInt()).isEqualTo(25);
 
-        when(previews.read(owner.id(), handle)).thenReturn(publicSnapshot(handle, "Unrelated person", START.plusSeconds(3)));
-        assertThat(call("POST", "/me/leetcode-link/sync", null, owner.token()).statusCode()).isEqualTo(409);
-        assertThat(total(owner.id())).isEqualTo(25);
     }
 
     private static ProfilePreview.Snapshot publicSnapshot(String handle, String name, Instant acceptedAt) {

@@ -4,10 +4,11 @@ import { ApiError, practiceApi } from './api'
 import type { LeetCodePreview, LinkStatus } from './api'
 import { usePublicLeetCode } from './PublicLeetCode'
 
-function statusText(link: LinkStatus, hasPreview: boolean) {
+function statusText(link: LinkStatus) {
   if (link.state === 'NONE') return 'No profile linked'
   if (link.state === 'DISCONNECTED') return 'Disconnected'
-  if (link.state === 'PENDING') return hasPreview ? 'Handle saved · public preview available' : 'Handle saved'
+  if (link.state === 'PENDING') return 'This username is already linked to another account. Enter a different username.'
+  if (!link.previewEnabled) return 'Profile saved · sync unavailable'
   if (link.providerPaused) return 'Sync paused for maintenance'
   if (!link.syncAvailable && link.syncState !== 'PAUSED') return 'Sync unavailable'
   if (link.syncState === 'QUEUED') return 'Sync queued'
@@ -43,11 +44,11 @@ function LeetCodeSnapshot({ profile }: { profile: LeetCodePreview }) {
     </div>
 }
 
-export function ProfileLeetCode({ accountId, requestedUrl, onboarding = false }: {
-  accountId: string; requestedUrl: string; onboarding?: boolean
+export function ProfileLeetCode({ accountId, requestedUrl }: {
+  accountId: string; requestedUrl: string
 }) {
   const publicProfile = usePublicLeetCode()
-  const { publish, updateLink } = publicProfile
+  const { publish, updateLink, refresh } = publicProfile
   const [handle, setHandle] = useState(requestedUrl)
   const [link, setLink] = useState<LinkStatus | null>(null)
   const [profile, setProfile] = useState<LeetCodePreview | null>(null)
@@ -115,32 +116,20 @@ export function ProfileLeetCode({ accountId, requestedUrl, onboarding = false }:
       setLink(saved)
       updateLink(saved)
       setHandle(saved.handle ?? '')
-      if (!saved.fixture && profile?.username.toLowerCase() === saved.handle && profile) {
-        publish(profile)
-      } else {
+      if (saved.handle !== link?.handle || saved.fixture !== link?.fixture) {
         setProfile(null)
         publish(null)
-        if (saved.previewEnabled && !saved.fixture) {
-          const next = await practiceApi.preview(accountId)
-          setProfile(next)
-          publish(next)
-        }
       }
+      void refresh(saved)
     })
   }
 
   const linked = link?.fixture ? null : link
-  const displayed = requestedUrl ? profile : publicProfile.snapshot
-  const message = error || (!requestedUrl ? publicProfile.error : '')
+  const displayed = profile ?? publicProfile.snapshot
+  const message = error || publicProfile.error
   return <section className="account-deletion" aria-labelledby="account-leetcode-heading">
-    <h2 id="account-leetcode-heading">{onboarding && linked?.state !== 'VERIFIED' ? 'Verify your LeetCode profile' : 'LeetCode profile'}</h2>
-    {onboarding && linked?.state === 'PENDING' && linked.ownershipCode && <ol className="profile-verification-steps">
-      <li>Copy your verification code <code>{linked.ownershipCode}</code>.</li>
-      <li>On LeetCode, add the code as a separate word in your public <strong>Real Name</strong> and save.</li>
-      <li>Return here and select <strong>Verify profile</strong> to check your newest accepted solve for XP.</li>
-    </ol>}
-    {onboarding && link && !link.previewEnabled && <p className="muted">LeetCode verification is currently unavailable on this deployment.</p>}
-    {!loading && <p role="status">{linked ? statusText(linked, Boolean(displayed)) : 'No profile linked'}{linked?.handle ? ' · ' + linked.handle : ''}</p>}
+    <h2 id="account-leetcode-heading">LeetCode profile</h2>
+    {!loading && <p role="status">{linked ? statusText(linked) : 'No profile linked'}{linked?.handle ? ' · ' + linked.handle : ''}</p>}
     <form onSubmit={save}>
       <label>LeetCode handle or profile URL
         <input value={handle} placeholder="https://leetcode.com/u/handle/" maxLength={256} required
@@ -149,14 +138,12 @@ export function ProfileLeetCode({ accountId, requestedUrl, onboarding = false }:
       <button type="submit" disabled={loading || saving}>{saving ? 'Saving…' : 'Save LeetCode profile'}</button>
     </form>
     {linked && <div className="practice-actions">
-      {linked.state === 'PENDING' && linked.ownershipCode && <button type="button" className="text-button" disabled={saving}
-        onClick={() => void perform(async () => {
-          const verified = await practiceApi.verify(accountId)
-          setLink(verified)
-          updateLink(verified)
-        })}>Verify profile</button>}
       {linked.syncAvailable && <button type="button" className="text-button" disabled={saving || linked.fixture && linked.syncState !== 'IDLE'}
-        onClick={() => void perform(async () => { setLink(await practiceApi.sync(accountId)) })}>Sync now</button>}
+        onClick={() => void perform(async () => {
+          const synced = await practiceApi.sync(accountId)
+          setLink(synced)
+          updateLink(synced)
+        })}>Sync now</button>}
       {(linked.state === 'VERIFIED' || linked.state === 'PENDING') &&
         <button type="button" className="text-button" disabled={saving} onClick={() => void perform(async () => {
           await practiceApi.disconnect(accountId)
@@ -168,11 +155,6 @@ export function ProfileLeetCode({ accountId, requestedUrl, onboarding = false }:
           updateLink(disconnected)
         })}>Disconnect profile</button>}
     </div>}
-    {linked?.ownershipCode && (!onboarding || linked.state === 'VERIFIED') && <p className="muted">
-      {linked.state === 'PENDING'
-        ? <>Add <code>{linked.ownershipCode}</code> to your public LeetCode Real Name, then select <strong>Verify profile</strong> to check your newest accepted solve.</>
-        : <>Keep <code>{linked.ownershipCode}</code> in your public LeetCode Real Name to continue syncing solve XP.</>}
-    </p>}
     {linked?.lastSuccessfulSyncAt && linked.state === 'VERIFIED' && <p className="muted">Last successful sync ·{' '}
       <time dateTime={linked.lastSuccessfulSyncAt}>{new Date(linked.lastSuccessfulSyncAt).toLocaleString(undefined, { timeZone: 'UTC' })} UTC</time>
     </p>}

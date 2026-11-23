@@ -12,10 +12,15 @@ test('practice uses the LeetCode catalog and manages the public handle in Profil
   const suffix = randomUUID().replaceAll('-', '').slice(0, 10)
   const email = 'practice-' + suffix + '@example.test'
   const password = 'phase-two-only-password'
+  const handle = 'practice-' + suffix
   let accepted = false
+  await page.route('**/api/v1/me/leetcode-link/sync', async route => {
+    const response = await route.fetch({ url: route.request().url().replace(/\/sync$/, ''), method: 'GET' })
+    await route.fulfill({ response })
+  })
   await page.route('**/api/v1/me/leetcode-link/preview*', route => route.fulfill({
     json: {
-      username: 'waiting-on-verification', realName: null, ranking: null,
+      username: handle, realName: null, ranking: null,
       problemsSolved: { all: Number(accepted), easy: Number(accepted), medium: 0, hard: 0 },
       heatmap: { streak: 0, totalActiveDays: 0, activityDays: [] },
       recentSubmissions: accepted ? [{ title: 'Two Sum', titleSlug: 'two-sum', timestamp: Math.floor(Date.now() / 1000) }] : [],
@@ -26,7 +31,7 @@ test('practice uses the LeetCode catalog and manages the public handle in Profil
   const headers = { Origin: new URL(page.url()).origin, 'X-LeetGrind-Client': 'browser' }
   const registered = await page.request.post('/api/v1/auth/register', {
     headers,
-    data: { email, password, displayName: 'Practice Learner', leetcodeHandle: 'waiting-on-verification' },
+    data: { email, password, displayName: 'Practice Learner', leetcodeHandle: handle },
   })
   expect(registered.status()).toBe(201)
   await page.getByLabel('Email').fill(email)
@@ -60,9 +65,9 @@ test('practice uses the LeetCode catalog and manages the public handle in Profil
 
   await page.getByRole('button', { name: 'Account menu' }).click()
   await page.getByRole('button', { name: 'Profile', exact: true }).click()
-  await page.getByLabel('LeetCode handle or profile URL').fill('waiting-on-verification')
+  await page.getByLabel('LeetCode handle or profile URL').fill(handle)
   await page.getByRole('button', { name: 'Save LeetCode profile' }).click()
-  await expect(page.getByText('Handle saved · public preview available', { exact: false })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Sync now' })).toBeVisible()
 
   await expect(page.getByRole('button', { name: 'Connect demo profile' })).toHaveCount(0)
   await page.getByRole('button', { name: 'Disconnect profile' }).click()
@@ -77,10 +82,15 @@ test('analytics shows history limits, recorded coverage, and selectable UTC peri
   const suffix = randomUUID().replaceAll('-', '').slice(0, 10)
   const email = 'analytics-' + suffix + '@example.test'
   const password = 'phase-seven-only-password'
+  const handle = 'calendar-' + suffix
   const today = new Date().toISOString().slice(0, 10)
+  await page.route('**/api/v1/me/leetcode-link/sync', async route => {
+    const response = await route.fetch({ url: route.request().url().replace(/\/sync$/, ''), method: 'GET' })
+    await route.fulfill({ response })
+  })
   await page.route('**/api/v1/me/leetcode-link/preview*', route => route.fulfill({
     json: {
-      username: 'calendar-example', realName: null, ranking: null,
+      username: handle, realName: null, ranking: null,
       problemsSolved: { all: 1, easy: 1, medium: 0, hard: 0 },
       heatmap: { streak: 1, totalActiveDays: 1, activityDays: [{ date: today, submissions: 1 }] }, recentSubmissions: [],
     },
@@ -88,7 +98,7 @@ test('analytics shows history limits, recorded coverage, and selectable UTC peri
   await page.goto('/')
   const registered = await page.request.post('/api/v1/auth/register', {
     headers: { Origin: new URL(page.url()).origin, 'X-LeetGrind-Client': 'browser' },
-    data: { email, password, displayName: 'Analytics Learner', leetcodeHandle: 'calendar-example' },
+    data: { email, password, displayName: 'Analytics Learner', leetcodeHandle: handle },
   })
   expect(registered.status()).toBe(201)
   await page.getByLabel('Email').fill(email)
@@ -96,7 +106,7 @@ test('analytics shows history limits, recorded coverage, and selectable UTC peri
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   await openWorkspace(page, 'Analytics')
   await expect(page.getByRole('heading', { name: 'Practice analytics' })).toBeVisible()
-  await expect(page.getByText('Live LeetCode sync is awaiting provider access and ownership verification.')).toBeVisible()
+  await expect(page.getByText('The profile is awaiting its first successful sync.', { exact: false })).toBeVisible()
   await expect(page.getByText('Historical imports are unavailable.', { exact: false })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Binary Search', exact: true })).toHaveAttribute('href', 'https://leetcode.com/problems/binary-search/')
   await expect(page.getByLabel('Analytics view')).toHaveCount(0)
