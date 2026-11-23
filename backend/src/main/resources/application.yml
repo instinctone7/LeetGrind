@@ -1,0 +1,40 @@
+spring:
+  lifecycle.timeout-per-shutdown-phase: 30s
+  application:
+    name: leetgrind
+  datasource:
+    url: ${LEETGRIND_DB_URL:jdbc:mysql://127.0.0.1:3307/leetgrind}
+    username: ${LEETGRIND_DB_USER:leetgrind}
+    password: ${LEETGRIND_DB_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate.jdbc.time_zone: UTC
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+logging:
+  pattern.level: '%5p [correlation=%X{correlationId:-}]'
+  level:
+    org.springframework.web: INFO
+    org.hibernate.orm.jdbc.error: OFF
+management:
+  endpoints.web.exposure.include: health,metrics
+  endpoint.health:
+    probes.enabled: true
+    group.readiness.include: readinessState,db
+leetgrind:
+  auth:
+    jwt-secret: ${LEETGRIND_JWT_SECRET}
+    browser-origin: ${LEETGRIND_BROWSER_ORIGIN}
+    secure-cookie: ${LEETGRIND_SECURE_COOKIE:true}
+  integration:
+    profile-preview-enabled: ${LEETGRIND_PROFILE_PREVIEW_ENABLED:true}
+    profile-service-url: ${LEETGRIND_PROFILE_SERVICE_URL:}
+    fixtures-enabled: ${LEETGRIND_FIXTURES_ENABLED:false}
+    scheduler-enabled: ${LEETGRIND_SCHEDULER_ENABLED:true}
+  signup:
+    mode: ${LEETGRIND_SIGNUP_MODE:OPEN}
+    pilot-emails: ${LEETGRIND_PILOT_EMAILS:}

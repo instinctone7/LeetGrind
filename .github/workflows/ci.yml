@@ -1,0 +1,78 @@
+name: Application checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  application:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: leetgrind
+          MYSQL_USER: leetgrind
+          MYSQL_PASSWORD: phase1-test-password
+          MYSQL_ROOT_PASSWORD: phase1-test-root
+        ports:
+          - '3307:3306'
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    env:
+      LEETGRIND_DB_URL: jdbc:mysql://127.0.0.1:3307/leetgrind
+      LEETGRIND_DB_PASSWORD: phase1-test-password
+      LEETGRIND_MYSQL_ROOT_PASSWORD: ci-compose-test-root
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Backend build, migrations, and integration tests
+        run: mvn -B -ntp -f backend/pom.xml verify
+      - name: Install browser test dependencies
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Browser journeys against the packaged application
+        env:
+          LEETGRIND_MYSQL_PORT: '13307'
+          LEETGRIND_PORT: '18080'
+          LEETGRIND_TEST_URL: http://127.0.0.1:18080
+          LEETGRIND_PROFILE_SERVICE_URL: http://127.0.0.1:1
+        run: |
+          export LEETGRIND_JWT_SECRET="$(openssl rand -base64 32)"
+          trap 'docker compose -p leetgrind-ci logs --no-color > "${RUNNER_TEMP}/leetgrind-browser.log"; docker compose -p leetgrind-ci down -v' EXIT
+          docker compose -p leetgrind-ci up --build -d --wait
+          npm --prefix frontend exec -- playwright test --workers=2 --config frontend/playwright.config.ts
+      - name: Rehearse the hosted profile over HTTPS
+        env:
+          SPRING_PROFILES_ACTIVE: hosted
+          LEETGRIND_SIGNUP_MODE: PILOT
+          LEETGRIND_PILOT_EMAILS: hosted-pilot@example.test
+        run: |
+          export LEETGRIND_JWT_SECRET="$(openssl rand -base64 32)"
+          compose=(docker compose -p leetgrind-hosted-ci -f compose.yaml -f compose.staging.yaml)
+          trap '"${compose[@]}" logs --no-color > "${RUNNER_TEMP}/leetgrind-hosted.log"; "${compose[@]}" down -v' EXIT
+          "${compose[@]}" up --build -d --wait
+          "${compose[@]}" exec -T edge cat /data/caddy/pki/authorities/local/root.crt > "${RUNNER_TEMP}/leetgrind-ca.crt"
+          python3 -B scripts/phase4/https_smoke.py hosted --origin https://127.0.0.1:8443 --ca "${RUNNER_TEMP}/leetgrind-ca.crt"
+      - name: Upload application logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: leetgrind-application-logs
+          path: ${{ runner.temp }}/leetgrind-*.log

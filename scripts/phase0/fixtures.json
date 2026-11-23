@@ -1,0 +1,291 @@
+{
+  "complete_mixed": {
+    "expected_profile_id": "fixture-profile-a",
+    "evidence": {
+      "transport": "http",
+      "status_code": 200,
+      "body": {
+        "data": {
+          "profile_id": "fixture-profile-a",
+          "range_state": "complete",
+          "submissions": [
+            {
+              "submission_id": "fixture-sub-1",
+              "problem_id": "fixture-problem-a",
+              "occurred_at": "2026-01-05T10:05:00Z",
+              "outcome": "accepted",
+              "difficulty": "medium"
+            },
+            {
+              "submission_id": "fixture-sub-2",
+              "problem_id": "fixture-problem-a",
+              "occurred_at": "2026-01-05T10:05:00Z",
+              "outcome": "rejected",
+              "difficulty": "medium"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "complete_empty": {
+    "expected_profile_id": "fixture-profile-a",
+    "evidence": {
+      "transport": "http",
+      "status_code": 200,
+      "body": {
+        "data": {
+          "profile_id": "fixture-profile-a",
+          "range_state": "complete",
+          "submissions": []
+        }
+      }
+    }
+  },
+  "incomplete_record": {
+    "expected_profile_id": "fixture-profile-a",
+    "evidence": {
+      "transport": "http",
+      "status_code": 200,
+      "body": {
+        "data": {
+          "profile_id": "fixture-profile-a",
+          "range_state": "complete",
+          "submissions": [
+            {
+              "submission_id": "fixture-sub-1",
+              "problem_id": "fixture-problem-a",
+              "occurred_at": "2026-01-05T10:05:00Z",
+              "outcome": "accepted",
+              "difficulty": "medium"
+            },
+            {
+              "submission_id": "fixture-sub-4",
+              "problem_id": "fixture-problem-a",
+              "occurred_at": "2026-01-05T10:05:00Z",
+              "outcome": "accepted",
+              "difficulty": null
+            }
+          ]
+        }
+      }
+    }
+  },
+  "out_of_order_overlap": {
+    "expected_profile_id": "fixture-profile-a",
+    "evidence": {
+      "transport": "http",
+      "status_code": 200,
+      "body": {
+        "data": {
+          "profile_id": "fixture-profile-a",
+          "range_state": "complete",
+          "submissions": [
+            {
+              "submission_id": "fixture-sub-5",
+              "problem_id": "fixture-problem-b",
+              "occurred_at": "2026-01-05T11:00:00Z",
+              "outcome": "accepted",
+              "difficulty": "medium"
+            },
+            {
+              "submission_id": "fixture-sub-3",
+              "problem_id": "fixture-problem-b",
+              "occurred_at": "2026-01-05T10:05:00Z",
+              "outcome": "accepted",
+              "difficulty": "medium"
+            },
+            {
+              "submission_id": "fixture-sub-1",
+              "problem_id": "fixture-problem-a",
+              "occurred_at": "2026-01-05T10:05:00+00:00",
+              "outcome": "accepted",
+              "difficulty": "medium"
+            },
+            {
+              "submission_id": "fixture-sub-1",
+              "problem_id": "fixture-problem-a",
+              "occurred_at": "2026-01-05T10:05:00Z",
+              "outcome": "accepted",
+              "difficulty": "medium"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "conflicting_submission": {
+    "expected_profile_id": "fixture-profile-a",
+    "evidence": {
+      "transport": "http",
+      "status_code": 200,
+      "body": {
+        "data": {
+          "profile_id": "fixture-profile-a",
+          "range_state": "complete",
+          "submissions": [
+            {
+              "submission_id": "fixture-sub-1",
+              "problem_id": "fixture-problem-a",
+              "occurred_at": "2026-01-05T10:05:00Z",
+              "outcome": "accepted",
+              "difficulty": "medium"
+            },
+            {
+              "submission_id": "fixture-sub-1",
+              "problem_id": "fixture-problem-conflict",
+              "occurred_at": "2026-01-05T10:05:00Z",
+              "outcome": "accepted",
+              "difficulty": "medium"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "partial_error_with_data": {
+    "expected_profile_id": "fixture-profile-a",
+    "evidence": {
+      "transport": "http",
+      "status_code": 200,
+      "body": {
+        "data": {
+          "profile_id": "fixture-profile-a",
+          "range_state": "complete",
+          "submissions": [
+            {
+              "submission_id": "fixture-sub-1",
+              "problem_id": "fixture-problem-a",
+              "occurred_at": "2026-01-05T10:05:00Z",
+              "outcome": "accepted",
+              "difficulty": "medium"
+            }
+          ]
+        },
+        "errors": [
+          {
+            "message": "synthetic upstream error"
+          }
+        ]
+      }
+    }
+  },
+  "partial_empty": {
+    "expected_profile_id": "fixture-profile-a",
+    "evidence": {
+      "transport": "http",
+      "status_code": 200,
+      "body": {
+        "data": {
+          "profile_id": "fixture-profile-a",
+          "range_state": "partial",
+          "submissions": []
+        }
+      }
+    }
+  },
+  "capped_feed": {
+    "expected_profile_id": "fixture-profile-a",
+    "evidence": {
+      "transport": "http",
+      "status_code": 200,
+      "body": {
+        "data": {
+          "profile_id": "fixture-profile-a",
+          "range_state": "unknown",
+          "submissions": [
+            {
+              "submission_id": "fixture-sub-1",
+              "problem_id": "fixture-problem-a",
+              "occurred_at": "2026-01-05T10:05:00Z",
+              "outcome": "accepted",
+              "difficulty": "medium"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "throttled": {
+    "expected_profile_id": "fixture-profile-a",
+    "evidence": {
+      "transport": "http",
+      "status_code": 429
+    }
+  },
+  "timeout": {
+    "expected_profile_id": "fixture-profile-a",
+    "evidence": {
+      "transport": "timeout"
+    }
+  },
+  "connection_error": {
+    "expected_profile_id": "fixture-profile-a",
+    "evidence": {
+      "transport": "connection_error"
+    }
+  },
+  "access_denied": {
+    "expected_profile_id": "fixture-profile-a",
+    "evidence": {
+      "transport": "http",
+      "status_code": 403
+    }
+  },
+  "server_error": {
+    "expected_profile_id": "fixture-profile-a",
+    "evidence": {
+      "transport": "http",
+      "status_code": 503
+    }
+  },
+  "upstream_error_without_data": {
+    "expected_profile_id": "fixture-profile-a",
+    "evidence": {
+      "transport": "http",
+      "status_code": 200,
+      "body": {
+        "data": null,
+        "errors": [
+          {
+            "message": "synthetic upstream error"
+          }
+        ]
+      }
+    }
+  },
+  "shape_drift": {
+    "expected_profile_id": "fixture-profile-a",
+    "evidence": {
+      "transport": "http",
+      "status_code": 200,
+      "body": {
+        "data": {
+          "activity": []
+        }
+      }
+    }
+  },
+  "mismatched_identity": {
+    "expected_profile_id": "fixture-profile-a",
+    "evidence": {
+      "transport": "http",
+      "status_code": 200,
+      "body": {
+        "data": {
+          "profile_id": "fixture-profile-b",
+          "range_state": "complete",
+          "submissions": [
+            {
+              "submission_id": "fixture-sub-1",
+              "problem_id": "fixture-problem-a",
+              "occurred_at": "2026-01-05T10:05:00Z",
+              "outcome": "accepted",
+              "difficulty": "medium"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

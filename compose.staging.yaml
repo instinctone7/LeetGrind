@@ -1,0 +1,32 @@
+services:
+  db:
+    ports: !reset []
+  app:
+    image: ${LEETGRIND_APP_IMAGE:-leetgrind-staging-app:local}
+    ports: !reset []
+    stop_grace_period: 65s
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-}
+      LEETGRIND_BROWSER_ORIGIN: https://127.0.0.1:${LEETGRIND_HTTPS_PORT:-8443}
+      LEETGRIND_SECURE_COOKIE: "true"
+      LEETGRIND_SIGNUP_MODE: ${LEETGRIND_SIGNUP_MODE:-CLOSED}
+      LEETGRIND_PILOT_EMAILS: ${LEETGRIND_PILOT_EMAILS:-}
+      LEETGRIND_SCHEDULER_ENABLED: ${LEETGRIND_SCHEDULER_ENABLED:-true}
+      SPRING_FLYWAY_ENABLED: ${LEETGRIND_MIGRATIONS_ENABLED:-true}
+  edge:
+    image: leetgrind-staging-edge:local
+    build: ./deploy/staging
+    ports:
+      - "127.0.0.1:${LEETGRIND_HTTPS_PORT:-8443}:8443"
+    volumes:
+      - staging-caddy-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /data/caddy/pki/authorities/local/root.crt && wget -q -O /dev/null http://127.0.0.1:2019/config/"]
+      interval: 3s
+      timeout: 5s
+      retries: 15
+    depends_on:
+      app:
+        condition: service_healthy
+volumes:
+  staging-caddy-data:

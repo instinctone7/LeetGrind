@@ -1,0 +1,2173 @@
+openapi: 3.1.0
+info:
+  title: LeetGrind API
+  version: 0.7.0
+  description: |
+    LeetGrind identity, practice, group competition, and personal analytics API. All responses include X-Correlation-ID. Error bodies
+    include the same ID to support diagnostics.
+    XP history and standings use an opaque cursor with a bounded limit and return
+    items and a nullable nextCursor.
+servers:
+  - url: /api/v1
+paths:
+  /auth/register:
+    post:
+      operationId: register
+      summary: Create an account
+      parameters:
+        - $ref: '#/components/parameters/BrowserOrigin'
+        - $ref: '#/components/parameters/BrowserClient'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Registration'
+      responses:
+        '201':
+          $ref: '#/components/responses/Profile'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '403':
+          $ref: '#/components/responses/ApiError'
+        '409':
+          $ref: '#/components/responses/ApiError'
+        '415':
+          $ref: '#/components/responses/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ApiError'
+  /auth/login:
+    post:
+      operationId: login
+      summary: Start an account session
+      parameters:
+        - $ref: '#/components/parameters/BrowserOrigin'
+        - $ref: '#/components/parameters/BrowserClient'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Login'
+      responses:
+        '200':
+          $ref: '#/components/responses/Access'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '403':
+          $ref: '#/components/responses/ApiError'
+        '415':
+          $ref: '#/components/responses/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/ApiError'
+  /auth/refresh:
+    post:
+      operationId: refresh
+      summary: Rotate the refresh credential and issue a new access JWT
+      parameters:
+        - $ref: '#/components/parameters/BrowserOrigin'
+        - $ref: '#/components/parameters/BrowserClient'
+        - $ref: '#/components/parameters/RefreshCookie'
+      responses:
+        '200':
+          $ref: '#/components/responses/Access'
+        '401':
+          $ref: '#/components/responses/InvalidRefresh'
+        '403':
+          $ref: '#/components/responses/ApiError'
+  /auth/logout:
+    post:
+      operationId: logout
+      summary: Revoke the session and clear the refresh cookie
+      parameters:
+        - $ref: '#/components/parameters/BrowserOrigin'
+        - $ref: '#/components/parameters/BrowserClient'
+        - $ref: '#/components/parameters/RefreshCookie'
+      responses:
+        '204':
+          description: Session ended. Calling this again returns the same status.
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/RefreshCookie'
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '403':
+          $ref: '#/components/responses/ApiError'
+  /me:
+    get:
+      operationId: getProfile
+      summary: Get your profile
+      security:
+        - AccessToken: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Profile'
+        '401':
+          $ref: '#/components/responses/ApiError'
+    patch:
+      operationId: updateProfile
+      summary: Update your display name
+      security:
+        - AccessToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileUpdate'
+      responses:
+        '200':
+          $ref: '#/components/responses/Profile'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '415':
+          $ref: '#/components/responses/ApiError'
+  /me/delete:
+    post:
+      operationId: deleteAccount
+      summary: Permanently delete your account and practice and group scores
+      description: Transfer or close open groups you own before deleting your account.
+      security:
+        - AccessToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+                  writeOnly: true
+      responses:
+        '204':
+          description: Account removed and refresh cookie cleared.
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/RefreshCookie'
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '403':
+          $ref: '#/components/responses/ApiError'
+        '409':
+          $ref: '#/components/responses/ApiError'
+        '415':
+          $ref: '#/components/responses/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /me/leetcode-link:
+    get:
+      operationId: getLeetcodeLink
+      summary: Get your link and current synchronization state
+      security:
+        - AccessToken: []
+      responses:
+        '200':
+          $ref: '#/components/responses/LinkStatus'
+        '401':
+          $ref: '#/components/responses/ApiError'
+    put:
+      operationId: putLeetcodeLink
+      summary: Save or replace a provider handle using a handle or profile URL
+      description: Live handles stay pending. Optional local mode can verify an account-scoped synthetic profile.
+      security:
+        - AccessToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [handle]
+              properties:
+                handle:
+                  type: string
+                  minLength: 1
+                  maxLength: 256
+      responses:
+        '200':
+          $ref: '#/components/responses/LinkStatus'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '409':
+          $ref: '#/components/responses/ApiError'
+        '415':
+          $ref: '#/components/responses/ApiError'
+    delete:
+      operationId: disconnectLeetcodeLink
+      summary: Disconnect the active profile while preserving prior credits
+      security:
+        - AccessToken: []
+      responses:
+        '204':
+          description: The account has no active link.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '401':
+          $ref: '#/components/responses/ApiError'
+  /me/leetcode-link/preview:
+    get:
+      operationId: previewLeetcodeProfile
+      summary: Preview public LeetCode data for a supplied or saved handle
+      description: Returns a read-only snapshot. Preview data never verifies ownership or awards XP.
+      security:
+        - AccessToken: []
+      parameters:
+        - name: handle
+          in: query
+          description: A LeetCode handle or profile URL. Omit to use the account's saved handle.
+          schema: {type: string, maxLength: 256}
+      responses:
+        '200':
+          description: Profile identity, ranking, solve counts, calendar activity, and recent accepted submissions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [username, problemsSolved, heatmap, recentSubmissions]
+                properties:
+                  username: {type: string}
+                  realName: {type: [string, 'null']}
+                  ranking: {type: [integer, 'null']}
+                  problemsSolved:
+                    type: object
+                    properties:
+                      all: {type: integer}
+                      easy: {type: integer}
+                      medium: {type: integer}
+                      hard: {type: integer}
+                  heatmap:
+                    type: object
+                    properties:
+                      streak: {type: integer}
+                      totalActiveDays: {type: integer}
+                      activityDays:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            date: {type: string, format: date}
+                            submissions: {type: integer}
+                  recentSubmissions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        title: {type: string}
+                        titleSlug: {type: string}
+                        timestamp: {type: integer, format: int64}
+                        lang: {type: string}
+        '204':
+          description: Profile previews are disabled for this deployment.
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '404':
+          $ref: '#/components/responses/ApiError'
+        '409':
+          $ref: '#/components/responses/ApiError'
+        '429':
+          $ref: '#/components/responses/ApiError'
+        '502':
+          $ref: '#/components/responses/ApiError'
+  /me/leetcode-link/sync:
+    post:
+      operationId: syncLeetcodeLink
+      summary: Queue synchronization or return the existing queued, running, or retry state
+      security:
+        - AccessToken: []
+      responses:
+        '202':
+          $ref: '#/components/responses/LinkStatus'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '409':
+          $ref: '#/components/responses/ApiError'
+        '429':
+          $ref: '#/components/responses/ApiError'
+  /me/progress:
+    get:
+      operationId: getPracticeProgress
+      summary: Get your live and demo base-solve XP and counts
+      security:
+        - AccessToken: []
+      responses:
+        '200':
+          description: Practice progress.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [totalXp, solvedCount, fixtureXp, fixtureSolvedCount]
+                properties:
+                  totalXp:
+                    type: integer
+                    format: int64
+                  solvedCount:
+                    type: integer
+                    format: int64
+                  fixtureXp:
+                    type: integer
+                    format: int64
+                  fixtureSolvedCount:
+                    type: integer
+                    format: int64
+        '401':
+          $ref: '#/components/responses/ApiError'
+  /me/check-in:
+    post:
+      operationId: recordDailyCheckIn
+      summary: Award daily login XP once per UTC day
+      security:
+        - AccessToken: []
+      responses:
+        '200':
+          description: The start of the next UTC reward day.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [nextCheckInAt]
+                properties:
+                  nextCheckInAt: {type: string, format: date-time}
+        '401':
+          $ref: '#/components/responses/ApiError'
+  /me/reward-events:
+    get:
+      operationId: getRecentRewardEvents
+      summary: List recently recorded login rewards, verified solves, and achievements
+      security:
+        - AccessToken: []
+      responses:
+        '200':
+          description: Up to twenty events recorded in the last ten minutes.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [id, kind, label, amount, occurredAt]
+                  properties:
+                    id: {type: string}
+                    kind: {type: string, enum: [DAILY_LOGIN, BASE_SOLVE, ACHIEVEMENT]}
+                    label: {type: [string, 'null']}
+                    amount: {type: [integer, 'null']}
+                    occurredAt: {type: string, format: date-time}
+        '401':
+          $ref: '#/components/responses/ApiError'
+  /me/xp-entries:
+    get:
+      operationId: getXpHistory
+      summary: Get your XP history newest first
+      security:
+        - AccessToken: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: cursor
+          in: query
+          description: nextCursor from a previous page for this account.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: XP entries with their source.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/XpEntry'
+                  nextCursor:
+                    type: [string, 'null']
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '401':
+          $ref: '#/components/responses/ApiError'
+  /groups:
+    get:
+      operationId: listPrivateGroups
+      summary: List your current private groups
+      security:
+      - AccessToken: []
+      responses:
+        '200':
+          description: Successful request.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupDirectory'
+        '401':
+          $ref: '#/components/responses/ApiError'
+    post:
+      operationId: createPrivateGroup
+      summary: Create a public or private group and become its owner
+      security:
+      - AccessToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupSettings'
+      responses:
+        '201':
+          description: Successful request.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSummary'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '415':
+          $ref: '#/components/responses/ApiError'
+  /groups/overview:
+    get:
+      operationId: getJoinedGroupOverview
+      summary: Read weekly verified solve totals and current member previews for your joined groups
+      security:
+      - AccessToken: []
+      responses:
+        '200':
+          description: Current group summaries for the UTC week.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [id, weeklyXp, weeklySolves, personalXp, memberCount, memberInitials, lastSolveAt]
+                  properties:
+                    id: {type: string}
+                    weeklyXp: {type: integer, format: int64}
+                    weeklySolves: {type: integer, format: int64}
+                    personalXp: {type: integer, format: int64}
+                    memberCount: {type: integer, format: int64}
+                    memberInitials: {type: string, maxLength: 3}
+                    lastSolveAt: {type: [string, 'null'], format: date-time}
+        '401':
+          $ref: '#/components/responses/ApiError'
+  /groups/{groupId}:
+    parameters:
+    - name: groupId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[1-9][0-9]*$
+    get:
+      operationId: getPrivateGroup
+      summary: Get a joined group and its current members
+      security:
+      - AccessToken: []
+      responses:
+        '200':
+          description: Successful request.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupDetail'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '404':
+          $ref: '#/components/responses/ApiError'
+    patch:
+      operationId: updatePrivateGroup
+      summary: Update group settings as owner
+      security:
+      - AccessToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupUpdate'
+      responses:
+        '200':
+          description: Successful request.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSummary'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '403':
+          $ref: '#/components/responses/ApiError'
+        '404':
+          $ref: '#/components/responses/ApiError'
+        '415':
+          $ref: '#/components/responses/ApiError'
+    delete:
+      operationId: closePrivateGroup
+      summary: Close a group as owner and end its active memberships
+      security:
+      - AccessToken: []
+      responses:
+        '204':
+          description: No content.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '403':
+          $ref: '#/components/responses/ApiError'
+        '404':
+          $ref: '#/components/responses/ApiError'
+  /groups/{groupId}/ownership:
+    parameters:
+    - name: groupId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[1-9][0-9]*$
+    post:
+      operationId: transferGroupOwnership
+      summary: Transfer ownership to a current member
+      security:
+      - AccessToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - accountId
+              properties:
+                accountId:
+                  type: string
+                  pattern: ^[1-9][0-9]{0,18}$
+      responses:
+        '204':
+          description: No content.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '403':
+          $ref: '#/components/responses/ApiError'
+        '404':
+          $ref: '#/components/responses/ApiError'
+        '409':
+          $ref: '#/components/responses/ApiError'
+        '415':
+          $ref: '#/components/responses/ApiError'
+  /groups/{groupId}/members/{accountId}:
+    parameters:
+    - name: groupId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[1-9][0-9]*$
+    - name: accountId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[1-9][0-9]*$
+    delete:
+      operationId: removeGroupMember
+      summary: Leave the group or remove a member as owner
+      security:
+      - AccessToken: []
+      responses:
+        '204':
+          description: No content.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '403':
+          $ref: '#/components/responses/ApiError'
+        '404':
+          $ref: '#/components/responses/ApiError'
+        '409':
+          $ref: '#/components/responses/ApiError'
+  /group-memberships:
+    post:
+      operationId: redeemPrivateGroupInvite
+      summary: Join a private group by invitation
+      security:
+      - AccessToken: []
+      description: An existing member can retry redemption without consuming an additional use.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - code
+              properties:
+                code:
+                  type: string
+                  maxLength: 64
+                  minLength: 1
+      responses:
+        '200':
+          description: Successful request.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSummary'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '409':
+          $ref: '#/components/responses/ApiError'
+        '415':
+          $ref: '#/components/responses/ApiError'
+        '429':
+          $ref: '#/components/responses/ApiError'
+  /groups/{groupId}/invites:
+    parameters:
+    - name: groupId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[1-9][0-9]*$
+    get:
+      operationId: listGroupInvites
+      summary: List invitation metadata as owner
+      security:
+      - AccessToken: []
+      responses:
+        '200':
+          description: Successful request.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GroupInvite'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '403':
+          $ref: '#/components/responses/ApiError'
+        '404':
+          $ref: '#/components/responses/ApiError'
+    post:
+      operationId: createGroupInvite
+      summary: Create an expiring invitation as owner
+      security:
+      - AccessToken: []
+      description: The invitation code is returned on creation. It is never included in subsequent reads.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - expiresInHours
+              - maxUses
+              properties:
+                expiresInHours:
+                  type: integer
+                  minimum: 1
+                  maximum: 168
+                maxUses:
+                  type: integer
+                  minimum: 1
+                  maximum: 100
+      responses:
+        '201':
+          description: Successful request.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedGroupInvite'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '403':
+          $ref: '#/components/responses/ApiError'
+        '404':
+          $ref: '#/components/responses/ApiError'
+        '415':
+          $ref: '#/components/responses/ApiError'
+  /groups/{groupId}/invites/{inviteId}:
+    parameters:
+    - name: groupId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[1-9][0-9]*$
+    - name: inviteId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[1-9][0-9]*$
+    delete:
+      operationId: revokeGroupInvite
+      summary: Revoke an invitation as owner
+      security:
+      - AccessToken: []
+      responses:
+        '204':
+          description: No content.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '403':
+          $ref: '#/components/responses/ApiError'
+        '404':
+          $ref: '#/components/responses/ApiError'
+  /leaderboard:
+    get:
+      operationId: getIndividualStandings
+      summary: Rank the caller and current members of their open groups by live XP
+      security:
+      - AccessToken: []
+      parameters:
+      - name: period
+        in: query
+        schema:
+          type: string
+          enum: [weekly, monthly, all-time]
+          default: weekly
+      - name: week
+        in: query
+        schema:
+          type: string
+          format: date
+        description: Monday in UTC for weekly standings. Defaults to the current week.
+      - name: month
+        in: query
+        schema:
+          type: string
+          pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
+        description: UTC month for monthly standings. Defaults to the current month.
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: cursor
+        in: query
+        schema:
+          type: string
+        description: Use the nextCursor from the same account, period, and date.
+      responses:
+        '200':
+          description: Successful request.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupStandings'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '400':
+          $ref: '#/components/responses/ApiError'
+  /groups/{groupId}/leaderboard:
+    parameters:
+    - name: groupId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[1-9][0-9]*$
+    get:
+      operationId: getWeeklyGroupStandings
+      summary: Get weekly, monthly, or all-time standings for a joined group
+      description: Live standings count verified solve, quest, and check-in XP earned during group membership.
+      security:
+      - AccessToken: []
+      parameters:
+      - name: period
+        in: query
+        schema:
+          type: string
+          enum:
+          - weekly
+          - monthly
+          - all-time
+          default: weekly
+      - name: week
+        in: query
+        schema:
+          type: string
+          format: date
+        description: Monday in UTC for weekly standings. Defaults to the current week.
+      - name: month
+        in: query
+        schema:
+          type: string
+          pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
+        description: UTC month for monthly standings. Defaults to the current month.
+      - name: mode
+        in: query
+        schema:
+          type: string
+          enum:
+          - live
+          - demo
+          default: live
+        description: Demo mode requires fixtures.
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: cursor
+        in: query
+        schema:
+          type: string
+        description: Use the nextCursor from the same group, period, date and mode.
+      responses:
+        '200':
+          description: Successful request.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupStandings'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '404':
+          $ref: '#/components/responses/ApiError'
+  /me/practice-catalog:
+    get:
+      operationId: getPracticeCatalog
+      summary: Get curated problems and personal recorded solve status
+      security:
+      - AccessToken: []
+      parameters:
+      - $ref: '#/components/parameters/CompetitionMode'
+      responses:
+        '200':
+          description: Practice problems in the selected mode.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PracticeCatalogProblem'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '401':
+          $ref: '#/components/responses/ApiError'
+  /me/analytics:
+    get:
+      operationId: getPersonalAnalytics
+      summary: Get personal practice summaries, UTC trends, and problem recommendations
+      security:
+      - AccessToken: []
+      parameters:
+      - $ref: '#/components/parameters/CompetitionMode'
+      - name: period
+        in: query
+        schema: {type: string, enum: [all-time, weekly, monthly], default: all-time}
+        description: Filter the summary only. Trends and recommendations use the available recorded history.
+      - name: start
+        in: query
+        schema: {type: string, format: date}
+        description: UTC Monday for a weekly summary or first of month for a monthly summary. Omit for the current period.
+      responses:
+        '200':
+          description: Personal practice analytics.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonalAnalytics'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '401':
+          $ref: '#/components/responses/ApiError'
+  /me/rewards:
+    get:
+      operationId: getPracticeRewards
+      summary: Get your coding calendar, streaks, level, and current rewards
+      security:
+      - AccessToken: []
+      parameters:
+      - name: mode
+        in: query
+        schema:
+          type: string
+          enum:
+          - live
+          - demo
+          default: live
+        description: Demo rewards are available only with fixtures enabled.
+      responses:
+        '200':
+          description: UTC practice rewards.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PracticeRewards'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '401':
+          $ref: '#/components/responses/ApiError'
+  /groups/{groupId}/featured-problem:
+    get:
+      operationId: getGroupFeaturedProblem
+      summary: Get the current featured problem completion count for your group
+      security:
+      - AccessToken: []
+      parameters:
+      - name: groupId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: mode
+        in: query
+        schema:
+          type: string
+          enum:
+          - live
+          - demo
+          default: live
+        description: Demo rewards are available only with fixtures enabled.
+      responses:
+        '200':
+          description: UTC practice rewards.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupFeatured'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '404':
+          $ref: '#/components/responses/ApiError'
+  /groups/public:
+    get:
+      operationId: discoverPublicGroups
+      summary: Discover public groups you can join
+      security:
+      - AccessToken: []
+      parameters:
+      - $ref: '#/components/parameters/BeforeId'
+      responses:
+        '200':
+          description: Successful request.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PublicGroup'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '401':
+          $ref: '#/components/responses/ApiError'
+  /groups/{groupId}/join:
+    post:
+      operationId: joinPublicGroup
+      summary: Join an open public group
+      security:
+      - AccessToken: []
+      parameters:
+      - $ref: '#/components/parameters/CompetitionGroupId'
+      responses:
+        '200':
+          description: Successful request.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSummary'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '404':
+          $ref: '#/components/responses/ApiError'
+  /groups/{groupId}/challenges:
+    get:
+      operationId: listGroupChallenges
+      summary: List group challenges and your duels
+      security:
+      - AccessToken: []
+      parameters:
+      - $ref: '#/components/parameters/CompetitionGroupId'
+      - $ref: '#/components/parameters/CompetitionMode'
+      - $ref: '#/components/parameters/BeforeId'
+      responses:
+        '200':
+          description: Successful request.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Challenge'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '404':
+          $ref: '#/components/responses/ApiError'
+    post:
+      operationId: createGroupChallenge
+      summary: Publish a challenge or invite an opponent to a duel
+      security:
+      - AccessToken: []
+      parameters:
+      - $ref: '#/components/parameters/CompetitionGroupId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChallengeRequest'
+      responses:
+        '201':
+          description: Successful request.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChallengeView'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '403':
+          $ref: '#/components/responses/ApiError'
+        '404':
+          $ref: '#/components/responses/ApiError'
+  /groups/{groupId}/challenges/{challengeId}:
+    get:
+      operationId: getGroupChallenge
+      summary: Get rules, participant progress and the finalized result
+      security:
+      - AccessToken: []
+      parameters:
+      - $ref: '#/components/parameters/CompetitionGroupId'
+      - $ref: '#/components/parameters/ChallengeId'
+      responses:
+        '200':
+          description: Successful request.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChallengeView'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '404':
+          $ref: '#/components/responses/ApiError'
+  /groups/{groupId}/challenges/{challengeId}/enrollment:
+    post:
+      operationId: enrollInChallenge
+      summary: Enroll in a group challenge or accept a duel
+      security:
+      - AccessToken: []
+      parameters:
+      - $ref: '#/components/parameters/CompetitionGroupId'
+      - $ref: '#/components/parameters/ChallengeId'
+      responses:
+        '200':
+          description: Successful request.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChallengeView'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '404':
+          $ref: '#/components/responses/ApiError'
+        '409':
+          $ref: '#/components/responses/ApiError'
+  /groups/{groupId}/activity:
+    get:
+      operationId: getGroupActivity
+      summary: Get the latest 40 group activity items
+      security:
+      - AccessToken: []
+      parameters:
+      - $ref: '#/components/parameters/CompetitionGroupId'
+      - $ref: '#/components/parameters/CompetitionMode'
+      responses:
+        '200':
+          description: Successful request.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GroupActivityItem'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '404':
+          $ref: '#/components/responses/ApiError'
+  /me/notifications:
+    get:
+      operationId: getNotifications
+      summary: Get up to 50 accessible notifications
+      security:
+      - AccessToken: []
+      parameters:
+      - $ref: '#/components/parameters/BeforeId'
+      responses:
+        '200':
+          description: Successful request.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Notification'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '401':
+          $ref: '#/components/responses/ApiError'
+  /me/notifications/{notificationId}/read:
+    post:
+      operationId: readNotification
+      summary: Mark an accessible notification read
+      security:
+      - AccessToken: []
+      parameters:
+      - $ref: '#/components/parameters/NotificationId'
+      responses:
+        '204':
+          description: Successful request.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '404':
+          $ref: '#/components/responses/ApiError'
+components:
+  securitySchemes:
+    AccessToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CompetitionGroupId:
+      name: groupId
+      in: path
+      required: true
+      schema: {type: string}
+    ChallengeId:
+      name: challengeId
+      in: path
+      required: true
+      schema: {type: string}
+    NotificationId:
+      name: notificationId
+      in: path
+      required: true
+      schema: {type: string}
+    BeforeId:
+      name: before
+      in: query
+      description: Optional exclusive ID from the last item in the previous page.
+      schema: {type: integer, format: int64}
+    CompetitionMode:
+      name: mode
+      in: query
+      description: Demo mode is available with fixtures enabled.
+      schema: {type: string, enum: [live, demo], default: live}
+    BrowserOrigin:
+      name: Origin
+      in: header
+      required: true
+      description: The configured LeetGrind web origin.
+      schema:
+        type: string
+    BrowserClient:
+      name: X-LeetGrind-Client
+      in: header
+      required: true
+      schema:
+        const: browser
+    RefreshCookie:
+      name: __Host-leetgrind_refresh
+      in: cookie
+      description: The loopback HTTP development profile uses leetgrind_refresh.
+      schema:
+        type: string
+  headers:
+    CorrelationId:
+      schema:
+        type: string
+        format: uuid
+    RefreshCookie:
+      description: HttpOnly and SameSite=Strict. Secure is used outside loopback development.
+      schema:
+        type: string
+  responses:
+    LinkStatus:
+      description: Profile linking and synchronization status visible to the owner.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/LinkStatus'
+    Profile:
+      description: Private profile of the account owner. Only handle and displayName are public identity fields.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Profile'
+    Access:
+      description: Short-lived access JWT and rotated refresh cookie.
+      headers:
+        Set-Cookie:
+          $ref: '#/components/headers/RefreshCookie'
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Access'
+    ApiError:
+      description: Request rejected.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    InvalidRefresh:
+      description: Refresh credential is unavailable or invalid. The refresh cookie is cleared.
+      headers:
+        Set-Cookie:
+          $ref: '#/components/headers/RefreshCookie'
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    RateLimited:
+      description: Too many attempts.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+  schemas:
+    PracticeCatalogProblem:
+      type: object
+      required: [slug, title, difficulty, solved, topics]
+      properties:
+        slug: {type: string}
+        title: {type: string}
+        difficulty: {type: string, enum: [EASY, MEDIUM, HARD]}
+        solved: {type: boolean}
+        topics:
+          type: array
+          items: {type: string}
+    PersonalAnalytics:
+      type: object
+      required: [mode, demoAvailable, timezone, generatedAt, coverage, summary, streaks, weekly, monthly, recommendations, dailyActivity]
+      properties:
+        mode: {type: string, enum: [live, demo]}
+        demoAvailable: {type: boolean}
+        timezone: {const: UTC}
+        generatedAt: {type: string, format: date-time}
+        coverage:
+          type: object
+          required: [state, trackedSince, lastSuccessfulSyncAt, historicalImportAvailable]
+          properties:
+            state: {type: string, enum: [UNAVAILABLE, NO_LINK, AWAITING_SYNC, PARTIAL, TRACKED_ONLY, DISCONNECTED]}
+            trackedSince: {type: [string, 'null'], format: date-time}
+            lastSuccessfulSyncAt: {type: [string, 'null'], format: date-time}
+            historicalImportAvailable: {type: boolean}
+        summary:
+          $ref: '#/components/schemas/AnalyticsSummary'
+        streaks:
+          type: object
+          required: [current, longest]
+          properties:
+            current: {type: integer, minimum: 0}
+            longest: {type: integer, minimum: 0}
+        dailyActivity:
+          type: array
+          description: UTC days with recorded solves within the last 365 days.
+          items:
+            type: object
+            required: [date, solves]
+            properties:
+              date: {type: string, format: date}
+              solves: {type: integer, minimum: 1}
+        weekly:
+          type: array
+          minItems: 8
+          maxItems: 8
+          items:
+            $ref: '#/components/schemas/AnalyticsBucket'
+        monthly:
+          type: array
+          minItems: 6
+          maxItems: 6
+          items:
+            $ref: '#/components/schemas/AnalyticsBucket'
+        recommendations:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/PracticeRecommendation'
+    AnalyticsSummary:
+      type: object
+      required: [period, start, end, solved, unmapped, xpEarned, codingDays, byDifficulty, topics]
+      properties:
+        period: {type: string, enum: [all-time, weekly, monthly]}
+        start:
+          type: [string, 'null']
+          format: date
+          description: Inclusive UTC date. Null for all time.
+        end:
+          type: [string, 'null']
+          format: date
+          description: Exclusive UTC date. Null for all time.
+        solved: {type: integer, minimum: 0}
+        unmapped: {type: integer, minimum: 0}
+        xpEarned: {type: integer, format: int64}
+        codingDays: {type: integer, minimum: 0}
+        byDifficulty:
+          type: array
+          items:
+            type: object
+            required: [difficulty, solved, unmapped]
+            properties:
+              difficulty: {type: string, enum: [EASY, MEDIUM, HARD]}
+              solved: {type: integer, minimum: 0}
+              unmapped: {type: integer, minimum: 0}
+        topics:
+          type: array
+          description: One first solve can contribute to several mapped topics.
+          items:
+            type: object
+            required: [topic, solved]
+            properties:
+              topic: {type: string}
+              solved: {type: integer, minimum: 0}
+    AnalyticsBucket:
+      type: object
+      required: [start, end, solved, codingDays, xpEarned, totalXp]
+      properties:
+        start: {type: string, format: date}
+        end:
+          type: string
+          format: date
+          description: Exclusive UTC date.
+        solved: {type: integer, minimum: 0}
+        codingDays: {type: integer, minimum: 0}
+        xpEarned: {type: integer, format: int64}
+        totalXp:
+          type: integer
+          format: int64
+          description: Cumulative XP including the balance before the displayed timeline.
+    PracticeRecommendation:
+      type: object
+      required: [id, slug, title, difficulty, topics, focusTopic, recordedInFocusTopic, reason, url]
+      properties:
+        id: {type: string}
+        slug: {type: string}
+        title: {type: string}
+        difficulty: {type: string, enum: [EASY, MEDIUM, HARD]}
+        topics:
+          type: array
+          items: {type: string}
+        focusTopic: {type: string}
+        recordedInFocusTopic: {type: integer, minimum: 0}
+        reason: {type: string}
+        url:
+          type: [string, 'null']
+          format: uri
+          description: LeetCode link for an actual catalog problem. Null for synthetic demo problems.
+    PublicGroup:
+      type: object
+      required: [id, name, description]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        description: {type: string}
+    ChallengeRequest:
+      type: object
+      required: [title, kind, rule, endsAt]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 80}
+        kind: {type: string, enum: [GROUP, DUEL]}
+        rule: {type: string, enum: [PROBLEM, COUNT, DIFFICULTY]}
+        mode: {type: string, enum: [live, demo], default: live}
+        inviteeId:
+          type: string
+          description: Required for duels. The invited account must be a current member of the group.
+        problemSlug:
+          type: string
+          pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+          maxLength: 128
+          description: Required for a specific problem. Use its provider slug.
+        difficulty: {type: string, enum: [EASY, MEDIUM, HARD]}
+        target: {type: integer, minimum: 1, maximum: 100}
+        startsAt:
+          type: string
+          format: date-time
+          description: Optional UTC start up to 90 days ahead. Defaults to creation time.
+        endsAt:
+          type: string
+          format: date-time
+          description: Exclusive deadline at most 30 days after the start.
+    Challenge:
+      type: object
+      required: [id, title, kind, rule, mode, problemSlug, difficulty, target, startsAt, endsAt, cutoffAt, ruleVersion, status, enrolled, finalizedAt, outcome]
+      properties:
+        id: {type: string}
+        title: {type: string}
+        kind: {type: string, enum: [GROUP, DUEL]}
+        rule: {type: string, enum: [PROBLEM, COUNT, DIFFICULTY]}
+        mode: {type: string, enum: [live, demo]}
+        problemSlug: {type: [string, 'null']}
+        difficulty: {type: [string, 'null'], enum: [EASY, MEDIUM, HARD, null]}
+        target: {type: integer, minimum: 1}
+        startsAt: {type: string, format: date-time}
+        endsAt: {type: string, format: date-time}
+        cutoffAt: {type: string, format: date-time}
+        ruleVersion: {type: integer, minimum: 1}
+        status: {type: string, enum: [SCHEDULED, AWAITING_OPPONENT, ACTIVE, GRACE, FINALIZED]}
+        enrolled: {type: integer, minimum: 0}
+        finalizedAt: {type: [string, 'null'], format: date-time}
+        outcome: {type: [string, 'null'], enum: [WIN, TIE, NO_SCORE, CANCELLED, null]}
+    ChallengeView:
+      type: object
+      required: [challenge, participants, canEnroll]
+      properties:
+        challenge:
+          $ref: '#/components/schemas/Challenge'
+        participants:
+          type: array
+          items:
+            type: object
+            required: [id, handle, displayName, enrolledAt, score, winner]
+            properties:
+              id: {type: string}
+              handle: {type: string}
+              displayName: {type: string}
+              enrolledAt: {type: [string, 'null'], format: date-time}
+              score: {type: integer, minimum: 0}
+              winner: {type: boolean}
+        canEnroll: {type: boolean}
+    GroupActivityItem:
+      type: object
+      required: [kind, at, label, displayName, handle, xp, challengeId]
+      properties:
+        kind: {type: string, enum: [SOLVE, CHALLENGE_CREATED, CHALLENGE_RESULT]}
+        at: {type: string, format: date-time}
+        label: {type: string}
+        displayName: {type: [string, 'null']}
+        handle: {type: [string, 'null']}
+        xp: {type: [integer, 'null']}
+        challengeId: {type: [string, 'null']}
+    Notification:
+      type: object
+      required: [id, kind, label, groupId, groupName, challengeId, challengeTitle, createdAt, readAt]
+      properties:
+        id: {type: string}
+        kind: {type: string, enum: [INVITATION, CHALLENGE_RESULT, ACHIEVEMENT, STANDINGS_CHANGE]}
+        label: {type: [string, 'null']}
+        groupId: {type: [string, 'null']}
+        groupName: {type: [string, 'null']}
+        challengeId: {type: [string, 'null']}
+        challengeTitle: {type: [string, 'null']}
+        createdAt: {type: string, format: date-time}
+        readAt: {type: [string, 'null'], format: date-time}
+    RewardTask:
+      type: object
+      required:
+      - kind
+      - startsAt
+      - endsAt
+      - cutoffAt
+      - ruleVersion
+      - rewardXp
+      - target
+      - completed
+      - topic
+      - eligibleProblemSlugs
+      properties:
+        kind:
+          type: string
+          enum:
+          - FEATURED
+          - DAILY_QUEST
+          - WEEKLY_QUEST
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+        cutoffAt:
+          type: string
+          format: date-time
+        ruleVersion:
+          type: integer
+          minimum: 0
+        rewardXp:
+          type: integer
+          minimum: 0
+        target:
+          type: integer
+          minimum: 0
+        completed:
+          type: integer
+          minimum: 0
+        topic:
+          type:
+          - string
+          - 'null'
+        eligibleProblemSlugs:
+          type: array
+          description: Snapshotted eligible catalog problems for a topic-based quest.
+          items:
+            type: string
+    PracticeRewards:
+      type: object
+      required:
+      - mode
+      - totalXp
+      - ledgerRevision
+      - level
+      - activity
+      - loginStreak
+      - recentSolves
+      - featured
+      - quests
+      - badges
+      properties:
+        mode:
+          type: string
+          enum:
+          - live
+          - demo
+        totalXp:
+          type: integer
+          minimum: 0
+        ledgerRevision:
+          type:
+          - string
+          - 'null'
+        level:
+          type: object
+          required:
+          - number
+          - minimumXp
+          - nextXp
+          - ruleVersion
+          properties:
+            number:
+              type: integer
+              minimum: 0
+            minimumXp:
+              type: integer
+              minimum: 0
+            nextXp:
+              type:
+              - integer
+              - 'null'
+            ruleVersion:
+              type: integer
+              minimum: 0
+        activity:
+          type: object
+          required:
+          - currentStreak
+          - longestStreak
+          - calendarStart
+          - calendarEnd
+          - codingDates
+          properties:
+            currentStreak:
+              type: integer
+              minimum: 0
+            longestStreak:
+              type: integer
+              minimum: 0
+            calendarStart:
+              type: string
+              format: date
+            calendarEnd:
+              type: string
+              format: date
+            codingDates:
+              type: array
+              items:
+                type: string
+                format: date
+        loginStreak:
+          type: object
+          required: [currentStreak, longestStreak]
+          properties:
+            currentStreak: {type: integer, minimum: 0}
+            longestStreak: {type: integer, minimum: 0}
+        recentSolves:
+          type: array
+          description: Credited first solves from the last seven UTC days.
+          items:
+            type: object
+            required: [date, slug, title, provider]
+            properties:
+              date: {type: string, format: date}
+              slug: {type: string}
+              title: {type: string}
+              provider: {type: string, enum: [FIXTURE, LEETCODE]}
+        featured:
+          type: object
+          required:
+          - title
+          - difficulty
+          - topics
+          - url
+          - task
+          properties:
+            title:
+              type: string
+            difficulty:
+              type: string
+              enum:
+              - EASY
+              - MEDIUM
+              - HARD
+            topics:
+              type: array
+              items:
+                type: string
+            url:
+              type:
+              - string
+              - 'null'
+              format: uri
+            task:
+              $ref: '#/components/schemas/RewardTask'
+        quests:
+          type: array
+          items:
+            $ref: '#/components/schemas/RewardTask'
+        badges:
+          type: array
+          items:
+            type: object
+            required:
+            - code
+            - ruleVersion
+            - unlockedAt
+            properties:
+              code:
+                type: string
+                enum:
+                - FIRST_SOLVE
+                - THREE_DAY_STREAK
+              ruleVersion:
+                type: integer
+                minimum: 0
+              unlockedAt:
+                type: string
+                format: date-time
+    GroupFeatured:
+      type: object
+      required:
+      - title
+      - startsAt
+      - endsAt
+      - cutoffAt
+      - members
+      - completed
+      properties:
+        title:
+          type: string
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+        cutoffAt:
+          type: string
+          format: date-time
+        members:
+          type: integer
+          minimum: 0
+        completed:
+          type: integer
+          minimum: 0
+    GroupSettings:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        description:
+          type: string
+          maxLength: 280
+        visibility:
+          type: string
+          enum: [PRIVATE, PUBLIC]
+          default: PRIVATE
+    GroupUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        description:
+          type: string
+          maxLength: 280
+    GroupSummary:
+      type: object
+      required:
+      - id
+      - name
+      - description
+      - role
+      - visibility
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        role:
+          type: string
+          enum:
+          - OWNER
+          - MEMBER
+        visibility:
+          type: string
+          enum: [PRIVATE, PUBLIC]
+    GroupDirectory:
+      type: object
+      required:
+      - items
+      - demoAvailable
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/GroupSummary'
+        demoAvailable:
+          type: boolean
+    GroupDetail:
+      type: object
+      required:
+      - group
+      - members
+      properties:
+        group:
+          $ref: '#/components/schemas/GroupSummary'
+        members:
+          type: array
+          items:
+            type: object
+            required:
+            - id
+            - handle
+            - displayName
+            - role
+            properties:
+              id:
+                type: string
+              handle:
+                type: string
+              displayName:
+                type: string
+              role:
+                type: string
+                enum:
+                - OWNER
+                - MEMBER
+    GroupInvite:
+      type: object
+      required:
+      - id
+      - expiresAt
+      - revokedAt
+      - maxUses
+      - uses
+      properties:
+        id:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        revokedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        maxUses:
+          type: integer
+          minimum: 1
+          maximum: 100
+        uses:
+          type: integer
+          minimum: 0
+          maximum: 100
+    CreatedGroupInvite:
+      type: object
+      required:
+      - id
+      - code
+      - expiresAt
+      - maxUses
+      properties:
+        id:
+          type: string
+        code:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{43}$
+        expiresAt:
+          type: string
+          format: date-time
+        maxUses:
+          type: integer
+          minimum: 1
+          maximum: 100
+    GroupStandings:
+      type: object
+      required:
+      - period
+      - mode
+      - periodStart
+      - periodEnd
+      - timezone
+      - generatedAt
+      - items
+      - nextCursor
+      properties:
+        period:
+          type: string
+          enum:
+          - weekly
+          - monthly
+          - all-time
+        mode:
+          type: string
+          enum:
+          - live
+          - demo
+        periodStart:
+          type: [string, 'null']
+          format: date-time
+          description: Inclusive UTC start. Null for all-time standings.
+        periodEnd:
+          type: [string, 'null']
+          format: date-time
+          description: Exclusive UTC end. Null for all-time standings.
+        timezone:
+          type: string
+          enum:
+          - UTC
+        generatedAt:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            type: object
+            required:
+            - id
+            - displayName
+            - handle
+            - rank
+            - xp
+            properties:
+              id:
+                type: string
+              displayName:
+                type: string
+              handle:
+                type: string
+              rank:
+                type: integer
+                minimum: 1
+              xp:
+                type: integer
+                minimum: 0
+        nextCursor:
+          type:
+          - string
+          - 'null'
+    LinkStatus:
+      type: object
+      required: [state, handle, fixture, demoAvailable, previewEnabled, syncAvailable, providerPaused, syncState, failureCode, coverageUncertain, activatedAt, lastAttemptAt, lastSuccessfulSyncAt, nextSyncAt, manualSyncAvailableAt]
+      properties:
+        state:
+          type: string
+          enum: [NONE, PENDING, VERIFIED, DISCONNECTED]
+        handle:
+          type: [string, 'null']
+        fixture:
+          type: boolean
+        demoAvailable:
+          type: boolean
+        previewEnabled:
+          type: boolean
+        syncAvailable:
+          type: boolean
+        providerPaused:
+          type: boolean
+        syncState:
+          type: [string, 'null']
+          enum: [QUEUED, RUNNING, IDLE, RETRY, PAUSED, null]
+        failureCode:
+          type: [string, 'null']
+        coverageUncertain:
+          type: boolean
+        activatedAt:
+          type: [string, 'null']
+          format: date-time
+        lastAttemptAt:
+          type: [string, 'null']
+          format: date-time
+        lastSuccessfulSyncAt:
+          type: [string, 'null']
+          format: date-time
+        nextSyncAt:
+          type: [string, 'null']
+          format: date-time
+        manualSyncAvailableAt:
+          type: [string, 'null']
+          format: date-time
+    XpEntry:
+      type: object
+      required: [id, provider, reason, amount, ruleVersion, problemTitle, difficulty, effectiveAt, recordedAt]
+      properties:
+        id:
+          type: string
+        provider:
+          type: string
+          enum: [FIXTURE, LEETCODE, PERSONAL]
+        reason:
+          type: string
+          enum: [BASE_SOLVE, FEATURED, DAILY_QUEST, WEEKLY_QUEST, DAILY_LOGIN]
+        amount:
+          type: integer
+        ruleVersion:
+          type: integer
+        problemTitle:
+          type: [string, 'null']
+        difficulty:
+          type: [string, 'null']
+          enum: [EASY, MEDIUM, HARD, null]
+        effectiveAt:
+          type: string
+          format: date-time
+        recordedAt:
+          type: string
+          format: date-time
+    Registration:
+      type: object
+      required: [email, password, displayName, leetcodeHandle]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          writeOnly: true
+          minLength: 12
+          description: Maximum 72 UTF-8 bytes.
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        leetcodeHandle:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: LeetCode username or profile URL saved with the account.
+    Login:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          writeOnly: true
+          description: Maximum 72 UTF-8 bytes.
+    ProfileUpdate:
+      type: object
+      required: [displayName]
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 80
+    Profile:
+      type: object
+      additionalProperties: false
+      required: [id, email, handle, displayName]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        handle:
+          type: string
+        displayName:
+          type: string
+    Access:
+      type: object
+      additionalProperties: false
+      required: [accountId, accessToken, expiresIn]
+      properties:
+        accountId:
+          type: string
+        accessToken:
+          type: string
+        expiresIn:
+          type: integer
+          description: Seconds until the access JWT expires.
+    ApiError:
+      type: object
+      additionalProperties: false
+      required: [code, message, correlationId]
+      properties:
+        code:
+          type: string
+          enum: [invalid_request, invalid_password, invalid_credentials, invalid_session, unauthenticated, invalid_origin, forbidden, account_conflict, rate_limited, unsupported_media_type, method_not_allowed, not_found, server_error, invalid_handle, invalid_pagination, provider_conflict, link_unverified, sync_unavailable, sync_paused, sync_cooldown, group_not_found, group_owner_required, owner_must_transfer, invalid_new_owner, invite_unavailable, invite_rate_limited, invalid_standings, invalid_week, incorrect_password, owned_groups, signup_unavailable, invalid_rewards_mode, invalid_month, invalid_challenge, challenge_not_found, enrollment_closed, notification_not_found, invalid_analytics_mode, invalid_analytics_period, profile_preview_unavailable, profile_preview_requires_handle, profile_preview_not_found]
+        message:
+          type: string
+        correlationId:
+          type: string
+          format: uuid

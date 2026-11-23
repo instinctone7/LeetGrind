@@ -1,0 +1,14 @@
+spring:
+  datasource:
+    url: ${LEETGRIND_DB_URL}
+    username: ${LEETGRIND_DB_USER}
+leetgrind:
+  auth:
+    secure-cookie: true
+  integration:
+    fixtures-enabled: false
+    scheduler-enabled: false
+    profile-preview-enabled: ${LEETGRIND_PROFILE_PREVIEW_ENABLED:false}
+    direct-profile-preview: false
+  signup:
+    mode: ${LEETGRIND_SIGNUP_MODE:CLOSED}
