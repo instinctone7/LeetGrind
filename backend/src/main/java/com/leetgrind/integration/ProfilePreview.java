@@ -13,6 +13,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Locale;
 import java.util.List;
+import java.util.StringJoiner;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.leetgrind.catalog.ProblemCatalog.Difficulty;
@@ -115,34 +116,59 @@ public class ProfilePreview {
                 }
                 return preview;
             });
-            return direct ? withLatestDifficulty(snapshot) : snapshot;
+            return direct ? withDifficulties(snapshot) : snapshot;
         } catch (RestClientException | tools.jackson.core.JacksonException | IllegalArgumentException failure) {
             throw unavailable();
         }
     }
 
-    private Snapshot withLatestDifficulty(Snapshot snapshot) {
-        if (snapshot.recentSubmissions().isEmpty()) return snapshot;
-        Submission latest = snapshot.recentSubmissions().getFirst();
-        String slug = latest.titleSlug();
-        if (slug == null || !slug.matches("[a-z0-9-]{1,128}")) return snapshot;
+    private Snapshot withDifficulties(Snapshot snapshot) {
+        var slugs = snapshot.recentSubmissions().stream().map(Submission::titleSlug)
+                .filter(slug -> slug != null && slug.matches("[a-z0-9-]{1,128}"))
+                .distinct().limit(20).toList();
+        var difficulties = new HashMap<String, Difficulty>();
+        for (String slug : slugs) {
+            Difficulty known = links.knownDifficulty(slug);
+            if (known != null) difficulties.put(slug, known);
+        }
+        var unknown = slugs.stream().filter(slug -> !difficulties.containsKey(slug)).toList();
+        if (!unknown.isEmpty()) difficulties.putAll(fetchDifficulties(unknown));
+        var submissions = snapshot.recentSubmissions().stream().map(item -> new Submission(item.title(),
+                item.titleSlug(), item.timestamp(), item.lang(), difficulties.get(item.titleSlug()))).toList();
+        return new Snapshot(snapshot.username(), snapshot.realName(), snapshot.ranking(),
+                snapshot.problemsSolved(), snapshot.heatmap(), submissions);
+    }
 
+    private Map<String, Difficulty> fetchDifficulties(List<String> slugs) {
+        var variables = new HashMap<String, String>();
+        var arguments = new StringJoiner(", ");
+        var fields = new StringJoiner("\n");
+        for (int index = 0; index < slugs.size(); index++) {
+            String variable = "slug" + index;
+            variables.put(variable, slugs.get(index));
+            arguments.add("$" + variable + ": String!");
+            fields.add("p" + index + ": question(titleSlug: $" + variable + ") { titleSlug difficulty }");
+        }
+        String query = "query RecentProblemDifficulties(" + arguments + ") {\n" + fields + "\n}";
         try {
-            Difficulty difficulty = client.post().uri("/graphql/").contentType(MediaType.APPLICATION_JSON)
+            return client.post().uri("/graphql/").contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_JSON)
-                    .body(Map.of("query", PROBLEM_QUERY, "variables", Map.of("slug", slug)))
+                    .body(Map.of("query", query, "variables", variables))
                     .exchange((sent, response) -> {
-                        if (!response.getStatusCode().is2xxSuccessful()) return null;
+                        if (!response.getStatusCode().is2xxSuccessful()) return Map.of();
                         byte[] body = response.getBody().readNBytes(MAX_BYTES + 1);
-                        return body.length > MAX_BYTES ? null : questionDifficulty(json.readTree(body), slug);
+                        if (body.length > MAX_BYTES) return Map.of();
+                        JsonNode data = json.readTree(body).path("data");
+                        var difficulties = new HashMap<String, Difficulty>();
+                        for (int i = 0; i < slugs.size(); i++) {
+                            String slug = slugs.get(i);
+                            Difficulty difficulty = readDifficulty(data.path("p" + i), slug);
+                            if (difficulty != null) difficulties.put(slug, difficulty);
+                        }
+                        return difficulties;
                     });
-            if (difficulty == null) return snapshot;
-            var submissions = new ArrayList<>(snapshot.recentSubmissions());
-            submissions.set(0, new Submission(latest.title(), slug, latest.timestamp(), latest.lang(), difficulty));
-            return new Snapshot(snapshot.username(), snapshot.realName(), snapshot.ranking(),
-                    snapshot.problemsSolved(), snapshot.heatmap(), submissions);
         } catch (RestClientException | tools.jackson.core.JacksonException | IllegalArgumentException failure) {
-            return snapshot;
+            return Map.of();
         }
     }
 
@@ -173,7 +199,10 @@ public class ProfilePreview {
 
     static Difficulty questionDifficulty(JsonNode root, String slug) {
         if (!root.isObject() || root.path("errors").size() != 0) return null;
-        JsonNode question = root.path("data").path("question");
+        return readDifficulty(root.path("data").path("question"), slug);
+    }
+
+    private static Difficulty readDifficulty(JsonNode question, String slug) {
         if (!slug.equals(question.path("titleSlug").asString(null))) return null;
         return switch (question.path("difficulty").asString("")) {
             case "Easy" -> Difficulty.EASY;

@@ -38,6 +38,7 @@ export function PublicLeetCodeProvider({ accountId, children }: { accountId: str
   const lastReturnSync = useRef(0)
   const refresh = useCallback(async (chosen?: LinkStatus) => {
     const request = ++revision.current
+    let syncError = ''
     try {
       const link = chosen ?? await practiceApi.status(accountId)
       if (request !== revision.current) return
@@ -46,10 +47,11 @@ export function PublicLeetCodeProvider({ accountId, children }: { accountId: str
         latestSnapshot.current = null
         setNewAcceptances([])
         setSnapshot(null)
-        setError('')
+        setError(!link.previewEnabled && link.state === 'VERIFIED' && !link.fixture
+          ? 'LeetCode sync is disabled on this deployment. Solves and quest XP are waiting for sync to be enabled.'
+          : '')
         return
       }
-      let syncError = ''
       if (link.syncAvailable) {
         lastReturnSync.current = Date.now()
         try {
@@ -80,7 +82,7 @@ export function PublicLeetCodeProvider({ accountId, children }: { accountId: str
       }
     } catch (failure) {
       if (request === revision.current) {
-        setError(failure instanceof ApiError ? failure.message : 'The public LeetCode profile could not be refreshed.')
+        setError(syncError || (failure instanceof ApiError ? failure.message : 'The public LeetCode profile could not be refreshed.'))
       }
     }
   }, [accountId])

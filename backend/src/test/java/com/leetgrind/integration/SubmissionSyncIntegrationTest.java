@@ -176,7 +176,7 @@ class SubmissionSyncIntegrationTest {
     }
 
     @Test
-    void publicSolveWithoutOwnershipCodeCreditsPracticeAndBothLeaderboardsOnlyOnce() throws Exception {
+    void publicSyncCreditsMultipleRecentSolvesToPracticeAndBothLeaderboardsOnlyOnce() throws Exception {
         var owner = registerAndLogin();
         var link = body(call("GET", "/me/leetcode-link", null, owner.token()));
         String handle = link.path("handle").asText();
@@ -189,19 +189,24 @@ class SubmissionSyncIntegrationTest {
         assertThat(total(owner.id())).isZero();
 
         clock.advance(4);
-        when(previews.read(owner.id(), handle)).thenReturn(publicSnapshot(handle, null, START.plusSeconds(2)));
+        var newest = publicSnapshot(handle, null, START.plusSeconds(2));
+        when(previews.read(owner.id(), handle)).thenReturn(new ProfilePreview.Snapshot(handle, null, null,
+                new ProfilePreview.Counts(2, 1, 1, 0), newest.heatmap(), List.of(
+                newest.recentSubmissions().getFirst(),
+                new ProfilePreview.Submission("Two Sum", "two-sum", START.plusSeconds(1).getEpochSecond(), null, null))));
         assertThat(call("POST", "/me/leetcode-link/sync", null, owner.token()).statusCode()).isEqualTo(202);
-        assertThat(total(owner.id())).isEqualTo(25);
+        assertThat(total(owner.id())).isEqualTo(35);
 
         clock.advance(3);
         assertThat(call("POST", "/me/leetcode-link/sync", null, owner.token()).statusCode()).isEqualTo(202);
         assertThat(call("POST", "/me/leetcode-link/sync", null, owner.token()).statusCode()).isEqualTo(202);
-        assertThat(total(owner.id())).isEqualTo(25);
-        assertThat(outboxCount(owner.id())).isEqualTo(1);
-        assertThat(body(call("GET", "/me/rewards", null, owner.token())).path("totalXp").asInt()).isEqualTo(30);
-        assertThat(body(call("GET", "/leaderboard", null, owner.token())).path("items").get(0).path("xp").asInt()).isEqualTo(30);
+        assertThat(total(owner.id())).isEqualTo(35);
+        assertThat(outboxCount(owner.id())).isEqualTo(2);
+        assertThat(body(call("GET", "/me/rewards", null, owner.token())).path("totalXp").asInt()).isEqualTo(40);
+        assertThat(body(call("GET", "/me/analytics", null, owner.token())).path("summary").path("solved").asInt()).isEqualTo(2);
+        assertThat(body(call("GET", "/leaderboard", null, owner.token())).path("items").get(0).path("xp").asInt()).isEqualTo(40);
         assertThat(body(call("GET", "/groups/" + groupId + "/leaderboard", null, owner.token()))
-                .path("items").get(0).path("xp").asInt()).isEqualTo(25);
+                .path("items").get(0).path("xp").asInt()).isEqualTo(35);
 
     }
 

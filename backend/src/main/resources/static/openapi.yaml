@@ -294,7 +294,7 @@ paths:
   /me/leetcode-link/sync:
     post:
       operationId: syncLeetcodeLink
-      summary: Sync the newest public LeetCode solve or queue demo synchronization
+      summary: Sync recent public LeetCode solves or queue demo synchronization
       security:
         - AccessToken: []
       responses:

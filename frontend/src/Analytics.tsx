@@ -107,10 +107,10 @@ export function Analytics({ accountId }: { accountId: string }) {
           <option value="all-time">All time</option><option value="weekly">Week</option><option value="monthly">Month</option>
         </select>
       </label>
-      <button type="button" className="text-button" disabled={pending} onClick={() => {
+      <button type="button" className="text-button" disabled={pending} onClick={async () => {
         begin()
+        await publicProfile.refresh()
         setRevision(value => value + 1)
-        void publicProfile.refresh()
       }}>Refresh analytics</button>
     </div>
     {selection.start && <button type="button" className="text-button" onClick={() => select({ period: selection.period, start: '' })}>

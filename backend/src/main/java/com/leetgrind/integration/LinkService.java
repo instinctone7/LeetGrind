@@ -7,6 +7,8 @@ import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -169,21 +171,38 @@ public class LinkService {
 
         Instant now = Utc.now(clock);
         var windows = activeDuelWindows(accountId, now);
-        boolean duelRecorded = false;
         var orderedSolves = preview.recentSubmissions().stream()
                 .sorted(Comparator.comparingLong(ProfilePreview.Submission::timestamp)).toList();
         ProfilePreview.Submission latest = orderedSolves.isEmpty() ? null : orderedSolves.getLast();
-        boolean latestRecorded = false;
+        Instant recentSince = now.minus(8, ChronoUnit.DAYS);
+        var submissions = new ArrayList<ActivityProvider.Submission>();
+        boolean missingDifficulty = false;
         for (var solve : orderedSolves) {
             var duel = windows.stream().filter(window -> window.includes(solve)).findFirst();
-            if (duel.isPresent()) {
-                recordLatest(accountId, link, solve, now, false, duel.get().difficulty());
-                duelRecorded = true;
-                latestRecorded |= solve == latest;
+            Instant occurred = Instant.ofEpochSecond(solve.timestamp());
+            if ((solve != latest && duel.isEmpty() && occurred.isBefore(recentSince))
+                    || occurred.isBefore(Instant.EPOCH) || !occurred.isBefore(now)) continue;
+            String slug = solve.titleSlug();
+            String title = solve.title().strip();
+            if (slug == null || !slug.matches("[a-z0-9-]{1,128}") || title.isEmpty() || title.length() > 160) continue;
+
+            Difficulty difficulty = solve.difficulty();
+            if (difficulty == null) difficulty = duel.map(DuelWindow::difficulty).orElseGet(() -> knownDifficulty(slug));
+            if (difficulty == null) {
+                missingDifficulty = true;
+                continue;
             }
+            String id = UUID.nameUUIDFromBytes((slug + ":" + solve.timestamp()).getBytes(StandardCharsets.UTF_8)).toString();
+            submissions.add(new ActivityProvider.Submission(id, new Problem(slug, slug, title, difficulty),
+                    occurred, ActivityProvider.Outcome.ACCEPTED));
         }
-        if (latest != null && !latestRecorded) {
-            recordLatest(accountId, link, latest, now, duelRecorded, null);
+        if (submissions.isEmpty() && missingDifficulty) {
+            throw new Failure(HttpStatus.BAD_GATEWAY, "solve_difficulty_missing", "The latest solves are missing difficulty data. Try syncing again later.");
+        }
+        // Use the original acceptance time for quests, activity, and leaderboard eligibility.
+        if (!ingestion.ingest(new SubmissionIngestion.Source(accountId, link.id(), LIVE, link.handle(), Instant.EPOCH, now),
+                submissions, now)) {
+            throw new Failure(HttpStatus.BAD_GATEWAY, "solve_evidence_changed", "LeetCode returned conflicting submission data.");
         }
         jdbc.sql("UPDATE leetcode_links SET last_success_at = ? WHERE id = ?")
                 .params(Utc.sql(now), link.id()).update();
@@ -203,30 +222,13 @@ public class LinkService {
                         time(row, "starts_at"), time(row, "ends_at"))).list();
     }
 
-    private void recordLatest(long accountId, Link link, ProfilePreview.Submission latest, Instant now,
-                              boolean optionalDifficulty, Difficulty duelDifficulty) {
-        String slug = latest.titleSlug();
-        Instant occurred = Instant.ofEpochSecond(latest.timestamp());
-        if (slug == null || !slug.matches("[a-z0-9-]{1,128}") || latest.title().isBlank()
-                || latest.title().length() > 160 || occurred.isBefore(Instant.EPOCH) || !occurred.isBefore(now)) return;
-
-        Difficulty difficulty = latest.difficulty() == null ? duelDifficulty : latest.difficulty();
-        if (difficulty == null) {
-            difficulty = jdbc.sql("SELECT difficulty FROM practice_catalog WHERE provider = ? AND slug = ?")
-                    .params(LIVE, slug).query(String.class).optional().map(Difficulty::valueOf).orElse(null);
-        }
-        if (difficulty == null) {
-            if (optionalDifficulty) return;
-            throw new Failure(HttpStatus.BAD_GATEWAY, "solve_difficulty_missing", "The newest solve’s difficulty is unavailable. Try syncing again later.");
-        }
-        String submissionId = UUID.nameUUIDFromBytes((slug + ":" + latest.timestamp()).getBytes(StandardCharsets.UTF_8)).toString();
-        var submission = new ActivityProvider.Submission(submissionId, new Problem(slug, slug, latest.title().strip(), difficulty),
-                occurred, ActivityProvider.Outcome.ACCEPTED);
-        // A solve may precede linking. Its source time determines leaderboard eligibility.
-        if (!ingestion.ingest(new SubmissionIngestion.Source(accountId, link.id(), LIVE, link.handle(), Instant.EPOCH, now),
-                List.of(submission), now)) {
-            throw new Failure(HttpStatus.BAD_GATEWAY, "solve_evidence_changed", "LeetCode returned conflicting submission data.");
-        }
+    Difficulty knownDifficulty(String slug) {
+        return jdbc.sql("""
+                SELECT difficulty FROM problems WHERE provider = ? AND provider_problem_id = ?
+                UNION ALL
+                SELECT difficulty FROM practice_catalog WHERE provider = ? AND slug = ?
+                LIMIT 1
+                """).params(LIVE, slug, LIVE, slug).query(String.class).optional().map(Difficulty::valueOf).orElse(null);
     }
 
     @Transactional

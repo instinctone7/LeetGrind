@@ -19,7 +19,7 @@ Open **http://127.0.0.1:8080/**. Use the exact origin so browser session request
 
 During signup, enter your display name and a LeetCode username or profile URL.
 
-You can update your LeetCode username or profile URL in **Profile**. When sync is enabled, LeetGrind checks the saved profile’s newest accepted problem when you open or return to the workspace and when you select **Sync now**. Each LeetCode username can be linked to one LeetGrind account. A first credited solve earns 10 XP for Easy, 25 XP for Medium, or 50 XP for Hard. Repeated refreshes and repeated accepts of the same problem cannot award solve XP again.
+You can update your LeetCode username or profile URL in **Profile**. When sync is enabled, LeetGrind checks recent accepted problems when you open or return to the workspace and when you select **Sync now**. Each LeetCode username can be linked to one LeetGrind account. A first credited solve earns 10 XP for Easy, 25 XP for Medium, or 50 XP for Hard. Repeated refreshes and repeated accepts of the same problem cannot award solve XP again.
 
 The read-only preview shows public solve counts, activity, and recent accepted submissions. The unofficial GraphQL response can change and covers only recent public activity. Hosted deployments use a compatible approved profile service implementing `GET /api/leetcode/user/{handle}`. [Hosted profile service setup](docs/deployment-plan.md#leetcode-launch-scope)
 

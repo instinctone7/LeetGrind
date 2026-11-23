@@ -28,7 +28,7 @@ function SyncStatus({ link, onProfile }: { link?: LinkStatus; onProfile: () => v
   if (link?.providerPaused || link?.syncState === 'PAUSED') label = 'Sync paused'
   else if (link?.syncState === 'QUEUED' || link?.syncState === 'RUNNING') label = 'Sync in progress'
   else if (link?.state === 'PENDING') label = 'LeetCode username already linked'
-  else if (link?.state === 'VERIFIED' && !link.previewEnabled) label = 'LeetCode profile saved'
+  else if (link?.state === 'VERIFIED' && !link.previewEnabled) label = 'LeetCode sync disabled'
   else if (link?.state === 'VERIFIED' && (link.failureCode || (link.lastSuccessfulSyncAt && link.coverageUncertain))) label = 'Coverage incomplete'
   else if (link?.state === 'VERIFIED' && link.lastSuccessfulSyncAt) label = 'LeetCode synced'
   else if (link?.state === 'VERIFIED') label = 'Ready to sync'
@@ -289,13 +289,13 @@ export function Dashboard({ profile, group, onLeaderboard, onPractice, onProfile
       </Metric>
     </div>
 
-    {personal?.link.previewEnabled && personal.link.handle && !personal.link.fixture && personal.link.state !== 'DISCONNECTED' && <section className="deck-panel" aria-labelledby="overview-leetcode">
+    {personal?.link.handle && !personal.link.fixture && personal.link.state !== 'DISCONNECTED' && <section className="deck-panel" aria-labelledby="overview-leetcode">
       <header className="deck-header"><h2 id="overview-leetcode">Public LeetCode progress</h2>
-        <button type="button" className="deck-action" disabled={refreshingProfile} onClick={async () => {
+        {personal.link.previewEnabled && <button type="button" className="deck-action" disabled={refreshingProfile} onClick={async () => {
           setRefreshingProfile(true)
           await refresh(personal.link)
           setRefreshingProfile(false)
-        }}>{refreshingProfile ? 'Refreshing…' : 'Refresh public activity'}</button>
+        }}>{refreshingProfile ? 'Refreshing…' : 'Refresh public activity'}</button>}
       </header>
       {profileError && <p role="alert">{profileError}</p>}
       {snapshot && <PublicLeetCodeStats snapshot={snapshot} />}

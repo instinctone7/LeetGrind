@@ -9,6 +9,6 @@ leetgrind:
     fixtures-enabled: false
     scheduler-enabled: false
     profile-preview-enabled: ${LEETGRIND_PROFILE_PREVIEW_ENABLED:false}
-    direct-profile-preview: false
+    direct-profile-preview: ${LEETGRIND_DIRECT_PROFILE_PREVIEW:false}
   signup:
     mode: ${LEETGRIND_SIGNUP_MODE:CLOSED}
